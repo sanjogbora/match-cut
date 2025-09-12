@@ -1,0 +1,570 @@
+import { FFmpeg } from '@ffmpeg/ffmpeg';
+import { fetchFile, toBlobURL } from '@ffmpeg/util';
+import { Output, BufferTarget, Mp4OutputFormat } from 'mediabunny';
+import { ExportSettings, AnimationFrame, VideoExportProgress, ResolutionConfig } from './types';
+import { downloadFile } from './utils';
+
+export class VideoExporter {
+  private ffmpeg: FFmpeg | null = null;
+  private isFFmpegLoaded = false;
+  private supportsWebCodecs = false;
+
+  constructor() {
+    this.checkWebCodecsSupport();
+  }
+
+  private checkWebCodecsSupport(): void {
+    this.supportsWebCodecs = 
+      'VideoEncoder' in window && 
+      'VideoDecoder' in window &&
+      'VideoFrame' in window;
+  }
+
+  async checkWebCodecsCapabilities(): Promise<{
+    supported: boolean;
+    supportedCodecs: string[];
+  }> {
+    if (!this.supportsWebCodecs) {
+      return { supported: false, supportedCodecs: [] };
+    }
+
+    const testCodecs = [
+      'avc1.42E01E', // H.264 Baseline
+      'avc1.42001E', // H.264 Baseline alternative
+      'avc1.640028', // H.264 High
+      'vp8',         // VP8
+      'vp09.00.10.08' // VP9
+    ];
+
+    const supportedCodecs: string[] = [];
+    
+    for (const codec of testCodecs) {
+      try {
+        const config = {
+          codec,
+          width: 640,
+          height: 480,
+          bitrate: 1_000_000,
+          framerate: 30,
+        };
+        
+        const support = await VideoEncoder.isConfigSupported(config);
+        if (support.supported) {
+          supportedCodecs.push(codec);
+        }
+      } catch (error) {
+        console.log(`Error testing codec ${codec}:`, error);
+      }
+    }
+
+    return {
+      supported: supportedCodecs.length > 0,
+      supportedCodecs
+    };
+  }
+
+  async initialize(): Promise<void> {
+    try {
+      console.log('Initializing video exporter...');
+      console.log('WebCodecs support:', this.supportsWebCodecs);
+      
+      // Test WebCodecs capabilities
+      if (this.supportsWebCodecs) {
+        const capabilities = await this.checkWebCodecsCapabilities();
+        console.log('WebCodecs capabilities:', capabilities);
+        this.supportsWebCodecs = capabilities.supported;
+      }
+      
+      // Check network connectivity first
+      if (!navigator.onLine) {
+        console.warn('No internet connection - FFmpeg loading may fail');
+      }
+      
+      // Initialize FFmpeg
+      this.ffmpeg = new FFmpeg();
+      
+      const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
+      
+      console.log('Loading FFmpeg from:', baseURL);
+      await this.ffmpeg.load({
+        coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
+        wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+      });
+
+      this.isFFmpegLoaded = true;
+      console.log('FFmpeg loaded successfully');
+      console.log('Available export formats:', this.getSupportedFormats());
+    } catch (error) {
+      console.error('Failed to initialize FFmpeg:', error);
+      if (error instanceof Error && error.message.includes('fetch')) {
+        console.error('Network error loading FFmpeg - check your internet connection');
+      }
+      console.log('Continuing without FFmpeg - MP4 support may be limited to WebCodecs');
+      // Continue without FFmpeg - we can still use WebCodecs for MP4
+    }
+  }
+
+  async exportAnimation(
+    frames: AnimationFrame[],
+    settings: ExportSettings,
+    resolution: ResolutionConfig,
+    onProgress?: (progress: VideoExportProgress) => void
+  ): Promise<Blob> {
+    if (frames.length === 0) {
+      throw new Error('No frames to export');
+    }
+
+    console.log(`Exporting ${frames.length} frames as ${settings.format}`);
+    console.log('Export settings:', settings);
+    console.log('Resolution:', resolution);
+    console.log('FFmpeg loaded:', this.isFFmpegLoaded);
+    console.log('WebCodecs supported:', this.supportsWebCodecs);
+
+    if (settings.format === 'gif') {
+      if (!this.isFFmpegLoaded) {
+        throw new Error('GIF export requires FFmpeg, but it is not available. Please try MP4 format instead.');
+      }
+      return this.exportGIF(frames, settings, resolution, onProgress);
+    } else if (settings.format === 'mp4') {
+      // For now, use FFmpeg for MP4 to ensure proper container format
+      // WebCodecs produces raw chunks that need complex muxing
+      if (this.isFFmpegLoaded) {
+        console.log('Using FFmpeg for MP4 export (reliable container format)');
+        return this.exportMP4FFmpeg(frames, settings, resolution, onProgress);
+      } else {
+        // Try WebCodecs as fallback, but it may produce unplayable files
+        if (this.supportsWebCodecs) {
+          console.log('Attempting WebCodecs for MP4 export (may need proper muxing)');
+          try {
+            return await this.exportMP4WebCodecs(frames, settings, resolution, onProgress);
+          } catch (error) {
+            console.warn('WebCodecs failed:', error);
+            throw new Error('MP4 export requires FFmpeg for proper container format. Please check your internet connection and try refreshing the page.');
+          }
+        } else {
+          throw new Error('MP4 export requires either FFmpeg or WebCodecs support. Please try a different browser or check your internet connection.');
+        }
+      }
+    } else {
+      throw new Error(`Unsupported format: ${settings.format}`);
+    }
+  }
+
+  private async exportGIF(
+    frames: AnimationFrame[],
+    settings: ExportSettings,
+    resolution: ResolutionConfig,
+    onProgress?: (progress: VideoExportProgress) => void
+  ): Promise<Blob> {
+    if (!this.isFFmpegLoaded || !this.ffmpeg) {
+      throw new Error('FFmpeg not available for GIF export');
+    }
+
+    onProgress?.({ phase: 'preparing', progress: 0 });
+
+    try {
+      // Write frames to FFmpeg
+      for (let i = 0; i < frames.length; i++) {
+        const canvas = frames[i].canvas;
+        const blob = await new Promise<Blob>((resolve, reject) => {
+          canvas.toBlob((blob) => {
+            if (blob) {
+              resolve(blob);
+            } else {
+              reject(new Error('Failed to create blob from canvas'));
+            }
+          }, 'image/png');
+        });
+        
+        await this.ffmpeg.writeFile(`frame${i.toString().padStart(3, '0')}.png`, await fetchFile(blob!));
+        
+        onProgress?.({ 
+          phase: 'preparing', 
+          progress: (i + 1) / frames.length * 0.3,
+          frameCount: frames.length,
+          currentFrame: i + 1
+        });
+      }
+
+      onProgress?.({ phase: 'encoding', progress: 0.3 });
+
+      // Create GIF with FFmpeg
+      const framerate = 1 / settings.frameDuration;
+      const loop = settings.loop ? '0' : '-1';
+      
+      await this.ffmpeg.exec([
+        '-framerate', framerate.toString(),
+        '-i', 'frame%03d.png',
+        '-vf', `fps=${framerate},scale=${resolution.width}:${resolution.height}:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse`,
+        '-loop', loop,
+        'output.gif'
+      ]);
+
+      onProgress?.({ phase: 'finalizing', progress: 0.9 });
+
+      // Read the output
+      const data = await this.ffmpeg.readFile('output.gif');
+      const uint8Array = new Uint8Array(data as unknown as ArrayBuffer);
+      const blob = new Blob([uint8Array], { type: 'image/gif' });
+
+      // Cleanup
+      for (let i = 0; i < frames.length; i++) {
+        await this.ffmpeg.deleteFile(`frame${i.toString().padStart(3, '0')}.png`);
+      }
+      await this.ffmpeg.deleteFile('output.gif');
+
+      onProgress?.({ phase: 'complete', progress: 1 });
+
+      return blob;
+    } catch (error) {
+      console.error('GIF export failed:', error);
+      throw new Error('Failed to export GIF');
+    }
+  }
+
+  private async exportMP4WebCodecs(
+    frames: AnimationFrame[],
+    settings: ExportSettings,
+    resolution: ResolutionConfig,
+    onProgress?: (progress: VideoExportProgress) => void
+  ): Promise<Blob> {
+    onProgress?.({ phase: 'preparing', progress: 0 });
+
+    try {
+      console.log('Creating MP4 output with Mediabunny...');
+      
+      // Create the output
+      const output = new Output({
+        format: new Mp4OutputFormat(),
+        target: new BufferTarget(),
+      });
+
+      // Create a canvas source for the video track
+      // We'll use a temporary canvas to render frames
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = resolution.width;
+      tempCanvas.height = resolution.height;
+      const tempCtx = tempCanvas.getContext('2d')!;
+
+      // For Mediabunny, we need to create our own manual encoding approach
+      // Since we have pre-rendered frames, let's fall back to raw chunk collection
+      // and manual muxing approach
+      
+      console.log('Falling back to manual MP4 creation...');
+      
+      return new Promise(async (resolve, reject) => {
+        const chunks: Uint8Array[] = [];
+        let frameCount = 0;
+        let encoderClosed = false;
+        let encoder: VideoEncoder | null = null;
+
+        try {
+          encoder = new VideoEncoder({
+            output: (chunk, metadata) => {
+              console.log('Received encoded chunk:', {
+                byteLength: chunk.byteLength,
+                type: chunk.type,
+                timestamp: chunk.timestamp,
+                duration: chunk.duration
+              });
+              
+              // Convert EncodedVideoChunk to Uint8Array
+              const buffer = new ArrayBuffer(chunk.byteLength);
+              chunk.copyTo(buffer);
+              chunks.push(new Uint8Array(buffer));
+            },
+            error: (error) => {
+              console.error('VideoEncoder error:', error);
+              if (!encoderClosed) {
+                encoderClosed = true;
+                encoder!.close();
+              }
+              reject(new Error('Video encoding failed: ' + error.message));
+            }
+          });
+
+          // Try codec configurations in order of preference  
+          const codecConfigs = [
+            {
+              codec: 'avc1.42001f', // H.264 Baseline Profile Level 3.1
+              width: resolution.width,
+              height: resolution.height,
+              bitrate: 2_000_000,
+              framerate: 1 / settings.frameDuration,
+            },
+            {
+              codec: 'avc1.42E01E', // H.264 Baseline
+              width: resolution.width,
+              height: resolution.height,
+              bitrate: 2_000_000,
+              framerate: 1 / settings.frameDuration,
+            },
+            {
+              codec: 'avc1.640028', // H.264 High
+              width: resolution.width,
+              height: resolution.height,
+              bitrate: 2_000_000,
+              framerate: 1 / settings.frameDuration,
+            }
+          ];
+
+          let config = null;
+          for (const testConfig of codecConfigs) {
+            console.log(`Testing codec support: ${testConfig.codec}`);
+            const support = await VideoEncoder.isConfigSupported(testConfig);
+            if (support.supported) {
+              config = testConfig;
+              console.log(`Using supported codec: ${testConfig.codec}`);
+              break;
+            } else {
+              console.log(`Codec not supported: ${testConfig.codec}`);
+            }
+          }
+
+          if (!config) {
+            throw new Error('No supported video codec found for WebCodecs');
+          }
+
+          encoder.configure(config);
+          onProgress?.({ phase: 'encoding', progress: 0.1 });
+          console.log('VideoEncoder configured with codec:', config.codec);
+
+          // Encode frames
+          for (let i = 0; i < frames.length; i++) {
+            if (encoderClosed || encoder.state === 'closed') {
+              throw new Error('Encoder was closed during processing');
+            }
+            
+            const canvas = frames[i].canvas;
+            
+            // Debug: Check if canvas has content before encoding
+            const ctx = canvas.getContext('2d')!;
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const hasContent = imageData.data.some((value, index) => {
+              return index % 4 === 3 && value > 0; // Check alpha channel for non-transparent pixels
+            });
+            
+            console.log(`Encoding frame ${i + 1}:`, {
+              canvasSize: { width: canvas.width, height: canvas.height },
+              hasContent,
+              imageId: frames[i].imageId,
+              frameIndex: i
+            });
+            
+            if (!hasContent) {
+              console.warn(`WARNING: Frame ${i + 1} being encoded appears to be empty!`);
+              console.warn('Frame details:', frames[i]);
+            }
+            
+            // Create VideoFrame with proper timestamp
+            const timestamp = i * settings.frameDuration * 1_000_000; // microseconds
+            const videoFrame = new VideoFrame(canvas, {
+              timestamp,
+              duration: settings.frameDuration * 1_000_000, // microseconds
+            });
+
+            console.log(`Encoding frame ${i + 1} with timestamp: ${timestamp}`);
+            encoder.encode(videoFrame, { keyFrame: i === 0 });
+            videoFrame.close();
+
+            frameCount++;
+            onProgress?.({ 
+              phase: 'encoding', 
+              progress: 0.1 + (i + 1) / frames.length * 0.8,
+              frameCount: frames.length,
+              currentFrame: i + 1
+            });
+          }
+
+          console.log('Flushing encoder...');
+          // Finish encoding
+          if (!encoderClosed && encoder.state !== 'closed') {
+            await encoder.flush();
+          }
+          
+          if (!encoderClosed) {
+            encoderClosed = true;
+            encoder.close();
+          }
+
+          onProgress?.({ phase: 'finalizing', progress: 0.95 });
+          console.log('Creating MP4 from chunks...');
+
+          // For now, let's create a basic MP4 structure
+          // This is a simplified approach - in reality we'd need proper MP4 muxing
+          if (chunks.length === 0) {
+            throw new Error('No video chunks were generated');
+          }
+
+          console.log(`Generated ${chunks.length} video chunks`);
+          
+          // Combine chunks into a single blob
+          // Note: This won't create a proper MP4 file, but let's see what we get
+          const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+          const combined = new Uint8Array(totalLength);
+          let offset = 0;
+          
+          for (const chunk of chunks) {
+            combined.set(chunk, offset);
+            offset += chunk.length;
+          }
+
+          // Try creating with MP4 MIME type
+          const blob = new Blob([combined], { type: 'video/mp4' });
+          onProgress?.({ phase: 'complete', progress: 1 });
+          
+          console.log('Raw chunks MP4 export completed, blob size:', blob.size);
+          
+          // Since raw chunks won't work, let's actually fall back to FFmpeg
+          console.warn('Raw chunks approach will not work - falling back to FFmpeg');
+          throw new Error('WebCodecs chunks need proper muxing - falling back to FFmpeg');
+          
+        } catch (error) {
+          console.error('WebCodecs MP4 export failed:', error);
+          if (!encoderClosed && encoder) {
+            encoderClosed = true;
+            encoder.close();
+          }
+          throw error; // Re-throw to trigger FFmpeg fallback
+        }
+      });
+      
+    } catch (error) {
+      console.error('WebCodecs MP4 export failed:', error);
+      throw new Error('Failed to export MP4 with WebCodecs: ' + (error as Error).message);
+    }
+  }
+
+  private async exportMP4FFmpeg(
+    frames: AnimationFrame[],
+    settings: ExportSettings,
+    resolution: ResolutionConfig,
+    onProgress?: (progress: VideoExportProgress) => void
+  ): Promise<Blob> {
+    if (!this.isFFmpegLoaded || !this.ffmpeg) {
+      throw new Error('FFmpeg not available for MP4 export');
+    }
+
+    onProgress?.({ phase: 'preparing', progress: 0 });
+
+    try {
+      // Write frames to FFmpeg
+      for (let i = 0; i < frames.length; i++) {
+        const canvas = frames[i].canvas;
+        const blob = await new Promise<Blob>((resolve, reject) => {
+          canvas.toBlob((blob) => {
+            if (blob) {
+              resolve(blob);
+            } else {
+              reject(new Error('Failed to create blob from canvas'));
+            }
+          }, 'image/png');
+        });
+        
+        await this.ffmpeg.writeFile(`frame${i.toString().padStart(3, '0')}.png`, await fetchFile(blob!));
+        
+        onProgress?.({ 
+          phase: 'preparing', 
+          progress: (i + 1) / frames.length * 0.3,
+          frameCount: frames.length,
+          currentFrame: i + 1
+        });
+      }
+
+      onProgress?.({ phase: 'encoding', progress: 0.3 });
+
+      // Create MP4 with FFmpeg
+      const framerate = 1 / settings.frameDuration;
+      
+      const ffmpegArgs = [
+        '-framerate', framerate.toString(),
+        '-i', 'frame%03d.png',
+        '-c:v', 'libx264',
+        '-pix_fmt', 'yuv420p',
+        '-crf', '23',
+        '-preset', 'medium',
+      ];
+
+      if (settings.addSound) {
+        // Add click sound logic here
+        // For now, just create silent MP4
+      }
+
+      ffmpegArgs.push('output.mp4');
+      
+      await this.ffmpeg.exec(ffmpegArgs);
+
+      onProgress?.({ phase: 'finalizing', progress: 0.9 });
+
+      // Read the output
+      const data = await this.ffmpeg.readFile('output.mp4');
+      const uint8Array = new Uint8Array(data as unknown as ArrayBuffer);
+      const blob = new Blob([uint8Array], { type: 'video/mp4' });
+
+      // Cleanup
+      for (let i = 0; i < frames.length; i++) {
+        await this.ffmpeg.deleteFile(`frame${i.toString().padStart(3, '0')}.png`);
+      }
+      await this.ffmpeg.deleteFile('output.mp4');
+
+      onProgress?.({ phase: 'complete', progress: 1 });
+
+      return blob;
+    } catch (error) {
+      console.error('FFmpeg MP4 export failed:', error);
+      throw new Error('Failed to export MP4');
+    }
+  }
+
+  // Add sound to MP4 (placeholder for future implementation)
+  private async addSoundToMP4(
+    videoBlob: Blob,
+    soundFile: File,
+    frameCount: number,
+    frameDuration: number
+  ): Promise<Blob> {
+    // This would use Web Audio API to generate click sounds
+    // and then mux with the video using FFmpeg
+    // For now, return the original video
+    return videoBlob;
+  }
+
+  async exportAndDownload(
+    frames: AnimationFrame[],
+    settings: ExportSettings,
+    resolution: ResolutionConfig,
+    filename: string,
+    onProgress?: (progress: VideoExportProgress) => void
+  ): Promise<void> {
+    try {
+      const blob = await this.exportAnimation(frames, settings, resolution, onProgress);
+      const extension = settings.format === 'gif' ? 'gif' : 'mp4';
+      const fullFilename = filename.includes('.') ? filename : `${filename}.${extension}`;
+      
+      downloadFile(blob, fullFilename);
+    } catch (error) {
+      console.error('Export and download failed:', error);
+      throw error;
+    }
+  }
+
+  cleanup(): void {
+    // Cleanup resources if needed
+    this.ffmpeg = null;
+    this.isFFmpegLoaded = false;
+  }
+
+  isReady(): boolean {
+    return this.isFFmpegLoaded || this.supportsWebCodecs;
+  }
+
+  getSupportedFormats(): string[] {
+    const formats = [];
+    if (this.isFFmpegLoaded) {
+      formats.push('gif', 'mp4');
+    } else if (this.supportsWebCodecs) {
+      formats.push('mp4');
+    }
+    return formats;
+  }
+}

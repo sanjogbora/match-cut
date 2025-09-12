@@ -1,0 +1,272 @@
+import { useState } from 'react';
+import { X, Eye, RotateCcw, ArrowUp, ArrowDown } from 'lucide-react';
+import { ImageData } from '@/lib/types';
+import { cn, formatFileSize } from '@/lib/utils';
+
+interface ImageGridProps {
+  images: ImageData[];
+  onRemoveImage: (id: string) => void;
+  onReorderImages: (fromIndex: number, toIndex: number) => void;
+  onRetryAlignment: (id: string) => void;
+  disabled?: boolean;
+  className?: string;
+}
+
+export default function ImageGrid({
+  images,
+  onRemoveImage,
+  onReorderImages,
+  onRetryAlignment,
+  disabled = false,
+  className
+}: ImageGridProps) {
+  const [selectedImage, setSelectedImage] = useState<ImageData | null>(null);
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+
+  const handleMoveUp = (index: number) => {
+    if (index > 0) {
+      onReorderImages(index, index - 1);
+    }
+  };
+
+  const handleMoveDown = (index: number) => {
+    if (index < images.length - 1) {
+      onReorderImages(index, index + 1);
+    }
+  };
+
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    if (disabled) return;
+    setDraggedIndex(index);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/html', e.currentTarget.outerHTML);
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    if (disabled || draggedIndex === null) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverIndex(index);
+  };
+
+  const handleDragLeave = () => {
+    setDragOverIndex(null);
+  };
+
+  const handleDrop = (e: React.DragEvent, dropIndex: number) => {
+    e.preventDefault();
+    if (disabled || draggedIndex === null || draggedIndex === dropIndex) {
+      setDraggedIndex(null);
+      setDragOverIndex(null);
+      return;
+    }
+
+    onReorderImages(draggedIndex, dropIndex);
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+  };
+
+  if (images.length === 0) {
+    return (
+      <div className={cn("text-center py-8", className)}>
+        <p className="text-gray-500">No images uploaded yet</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className={cn("space-y-4", className)}>
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-semibold text-gray-900">
+          Uploaded Images ({images.length})
+        </h3>
+        
+        <div className="text-right">
+          <div className="text-sm text-gray-500">
+            {images.filter(img => img.aligned).length} aligned, {' '}
+            {images.filter(img => !img.aligned).length} pending
+          </div>
+          {images.length > 1 && (
+            <div className="text-xs text-gray-400 mt-1">
+              Drag to reorder • Use arrows to adjust
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+        {images.map((image, index) => (
+          <div
+            key={image.id}
+            draggable={!disabled}
+            onDragStart={(e) => handleDragStart(e, index)}
+            onDragOver={(e) => handleDragOver(e, index)}
+            onDragLeave={handleDragLeave}
+            onDrop={(e) => handleDrop(e, index)}
+            onDragEnd={handleDragEnd}
+            className={cn(
+              "relative group bg-white rounded-lg shadow-sm border-2 transition-all duration-200",
+              "hover:shadow-md hover:scale-105",
+              {
+                "border-green-300 bg-green-50": image.aligned,
+                "border-orange-300 bg-orange-50": !image.aligned,
+                "opacity-50": disabled,
+                "opacity-60 transform scale-95": draggedIndex === index,
+                "border-blue-400 border-dashed bg-blue-50": dragOverIndex === index && draggedIndex !== index,
+                "cursor-move": !disabled,
+                "cursor-not-allowed": disabled,
+              }
+            )}
+          >
+            {/* Image Preview */}
+            <div className="aspect-square relative overflow-hidden rounded-t-lg">
+              <img
+                src={image.processedUrl || image.url}
+                alt={`Upload ${index + 1}`}
+                className="w-full h-full object-cover"
+                onClick={() => setSelectedImage(image)}
+              />
+              
+              {/* Status Indicator */}
+              <div className={cn(
+                "absolute top-2 left-2 w-3 h-3 rounded-full",
+                {
+                  "bg-green-500": image.aligned,
+                  "bg-orange-500 animate-pulse": !image.aligned,
+                }
+              )} />
+              
+              {/* Overlay Controls */}
+              <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all duration-200 flex items-center justify-center">
+                <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex space-x-2">
+                  <button
+                    onClick={() => setSelectedImage(image)}
+                    className="p-2 bg-white rounded-full hover:bg-gray-100 transition-colors"
+                    title="Preview"
+                  >
+                    <Eye className="w-4 h-4" />
+                  </button>
+                  
+                  {!image.aligned && (
+                    <button
+                      onClick={() => onRetryAlignment(image.id)}
+                      disabled={disabled}
+                      className="p-2 bg-white rounded-full hover:bg-gray-100 transition-colors disabled:opacity-50"
+                      title="Retry Alignment"
+                    >
+                      <RotateCcw className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Image Info */}
+            <div className="p-3 space-y-2">
+              <div className="text-xs text-gray-600 truncate">
+                {image.file.name}
+              </div>
+              
+              <div className="text-xs text-gray-500">
+                {formatFileSize(image.file.size)}
+              </div>
+              
+              <div className="flex items-center justify-between">
+                <div className={cn(
+                  "text-xs font-medium",
+                  {
+                    "text-green-600": image.aligned,
+                    "text-orange-600": !image.aligned,
+                  }
+                )}>
+                  {image.aligned ? 'Aligned' : 'Processing...'}
+                </div>
+                
+                <div className="flex space-x-1">
+                  <button
+                    onClick={() => handleMoveUp(index)}
+                    disabled={disabled || index === 0}
+                    className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-50"
+                    title="Move Up"
+                  >
+                    <ArrowUp className="w-3 h-3" />
+                  </button>
+                  
+                  <button
+                    onClick={() => handleMoveDown(index)}
+                    disabled={disabled || index === images.length - 1}
+                    className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-50"
+                    title="Move Down"
+                  >
+                    <ArrowDown className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Remove Button */}
+            <button
+              onClick={() => onRemoveImage(image.id)}
+              disabled={disabled}
+              className="absolute -top-2 -right-2 p-1 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors disabled:opacity-50"
+              title="Remove Image"
+            >
+              <X className="w-3 h-3" />
+            </button>
+
+            {/* Processing Indicator */}
+            {!image.aligned && (
+              <div className="absolute inset-0 bg-white bg-opacity-90 flex items-center justify-center rounded-lg">
+                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Image Preview Modal */}
+      {selectedImage && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-2xl max-h-full overflow-auto">
+            <div className="p-4 border-b flex items-center justify-between">
+              <h3 className="text-lg font-semibold">
+                {selectedImage.file.name}
+              </h3>
+              <button
+                onClick={() => setSelectedImage(null)}
+                className="p-2 hover:bg-gray-100 rounded-full"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="p-4">
+              <img
+                src={selectedImage.processedUrl || selectedImage.url}
+                alt="Preview"
+                className="w-full h-auto max-h-96 object-contain"
+              />
+              
+              <div className="mt-4 space-y-2 text-sm text-gray-600">
+                <div>Size: {formatFileSize(selectedImage.file.size)}</div>
+                <div>Status: {selectedImage.aligned ? 'Aligned' : 'Processing'}</div>
+                {selectedImage.eyePoints && (
+                  <div>
+                    Eye Points: Left({selectedImage.eyePoints.left[0].toFixed(0)}, {selectedImage.eyePoints.left[1].toFixed(0)}), 
+                    Right({selectedImage.eyePoints.right[0].toFixed(0)}, {selectedImage.eyePoints.right[1].toFixed(0)})
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
