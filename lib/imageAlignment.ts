@@ -1,14 +1,45 @@
-import { EyePoints, AlignmentTransform, ResolutionConfig, FaceDetectionResult } from './types';
+import { EyePoints, AlignmentTransform, ResolutionConfig, FaceDetectionResult, FaceLandmark } from './types';
 
 export type AlignmentMode = 'full' | 'face-crop' | 'smart-frame';
 
 export class ImageAligner {
   private targetEyeDistance = 0.35; // Target eye distance as proportion of canvas width
   private targetEyeY = 0.4; // Target eye Y position as proportion of canvas height
+  
+  // Enhanced alignment features
+  private previousTransforms: AlignmentTransform[] = [];
+  private smoothingFactor = 0.15; // Temporal smoothing to reduce jitter
+  private useSubPixelPrecision = true;
 
   constructor(targetEyeDistance = 0.35, targetEyeY = 0.4) {
     this.targetEyeDistance = targetEyeDistance;
     this.targetEyeY = targetEyeY;
+  }
+
+  // Enhanced eye center calculation using pupil approximation
+  private calculatePreciseEyeCenter(landmarks: FaceLandmark[], eyeIndices: number[]): [number, number] {
+    const validLandmarks = eyeIndices
+      .map(idx => landmarks[idx])
+      .filter(landmark => landmark);
+
+    if (validLandmarks.length === 0) {
+      throw new Error('No valid eye landmarks found');
+    }
+
+    // Weight inner eye landmarks more heavily (closer to actual pupil position)
+    let weightedX = 0, weightedY = 0, totalWeight = 0;
+
+    validLandmarks.forEach((landmark, i) => {
+      // Inner landmarks get higher weight for better pupil approximation
+      const isCorner = eyeIndices[i] === 33 || eyeIndices[i] === 133 || eyeIndices[i] === 362 || eyeIndices[i] === 263;
+      const weight = isCorner ? 0.5 : 1.5; // Reduce weight of corner points
+      
+      weightedX += landmark.x * weight;
+      weightedY += landmark.y * weight;
+      totalWeight += weight;
+    });
+
+    return [weightedX / totalWeight, weightedY / totalWeight];
   }
 
   alignImage(
@@ -48,7 +79,7 @@ export class ImageAligner {
     const { left, right } = eyePoints;
     const { width, height } = targetResolution;
 
-    // Calculate current eye properties
+    // Calculate current eye properties with higher precision
     const eyeCenterX = (left[0] + right[0]) / 2;
     const eyeCenterY = (left[1] + right[1]) / 2;
     const currentEyeDistance = Math.sqrt(
@@ -65,38 +96,72 @@ export class ImageAligner {
     const scale = targetEyeDistancePixels / currentEyeDistance;
     const rotation = -eyeAngle; // Negative to counter-rotate
 
-    // Create transformation matrix
+    // Create base transform
+    const transform: AlignmentTransform = {
+      rotation: rotation * (180 / Math.PI), // Convert to degrees
+      scale,
+      translation: [targetEyeCenterX - eyeCenterX * scale, targetEyeCenterY - eyeCenterY * scale],
+      matrix: this.createTransformMatrix(scale, rotation, targetEyeCenterX - eyeCenterX * scale, targetEyeCenterY - eyeCenterY * scale)
+    };
+
+    // Apply temporal smoothing to reduce jitter between frames
+    return this.applySmoothingToTransform(transform);
+  }
+
+  private createTransformMatrix(scale: number, rotation: number, tx: number, ty: number): number[][] {
     const cos = Math.cos(rotation);
     const sin = Math.sin(rotation);
 
-    // Translation to center eyes at origin
-    const tx1 = -eyeCenterX;
-    const ty1 = -eyeCenterY;
-
-    // Scale and rotate
-    const scaleRotateMatrix = [
-      [scale * cos, -scale * sin],
-      [scale * sin, scale * cos]
+    return [
+      [scale * cos, -scale * sin, tx],
+      [scale * sin, scale * cos, ty]
     ];
+  }
 
-    // Translation to target position
-    const tx2 = targetEyeCenterX;
-    const ty2 = targetEyeCenterY;
+  private applySmoothingToTransform(transform: AlignmentTransform): AlignmentTransform {
+    if (this.previousTransforms.length === 0) {
+      this.previousTransforms.push(transform);
+      return transform;
+    }
 
-    // Combine transformations: translate -> scale/rotate -> translate
-    const matrix = [
-      [scaleRotateMatrix[0][0], scaleRotateMatrix[0][1], 
-       scaleRotateMatrix[0][0] * tx1 + scaleRotateMatrix[0][1] * ty1 + tx2],
-      [scaleRotateMatrix[1][0], scaleRotateMatrix[1][1], 
-       scaleRotateMatrix[1][0] * tx1 + scaleRotateMatrix[1][1] * ty1 + ty2]
-    ];
+    const recent = this.previousTransforms[this.previousTransforms.length - 1];
+    const alpha = this.smoothingFactor;
 
-    return {
-      rotation: rotation * (180 / Math.PI), // Convert to degrees
-      scale,
-      translation: [tx2 - eyeCenterX * scale, ty2 - eyeCenterY * scale],
-      matrix
+    const smoothed: AlignmentTransform = {
+      rotation: this.interpolateAngle(recent.rotation, transform.rotation, alpha),
+      scale: recent.scale * (1 - alpha) + transform.scale * alpha,
+      translation: [
+        recent.translation[0] * (1 - alpha) + transform.translation[0] * alpha,
+        recent.translation[1] * (1 - alpha) + transform.translation[1] * alpha
+      ],
+      matrix: transform.matrix // Recalculate matrix after smoothing
     };
+
+    // Recalculate matrix with smoothed values
+    const radians = smoothed.rotation * (Math.PI / 180);
+    smoothed.matrix = this.createTransformMatrix(smoothed.scale, radians, smoothed.translation[0], smoothed.translation[1]);
+
+    this.previousTransforms.push(smoothed);
+    
+    // Keep only recent transforms for memory efficiency
+    if (this.previousTransforms.length > 3) {
+      this.previousTransforms.shift();
+    }
+
+    return smoothed;
+  }
+
+  private interpolateAngle(angle1: number, angle2: number, alpha: number): number {
+    // Handle angle wraparound for smooth rotation interpolation
+    let diff = angle2 - angle1;
+    if (diff > 180) diff -= 360;
+    if (diff < -180) diff += 360;
+    return angle1 + diff * alpha;
+  }
+
+  // Reset smoothing state (call when processing a new set of images)
+  resetSmoothingState(): void {
+    this.previousTransforms = [];
   }
 
   // Full image alignment method that preserves entire image on canvas
@@ -235,19 +300,25 @@ export class ImageAligner {
     return canvas;
   }
 
-  // Smart face cropping alignment - focuses on face region while maintaining eye alignment
+  // Enhanced face cropping alignment with improved eye detection
   alignImageFaceCrop(
     sourceImage: HTMLImageElement,
     faceResult: FaceDetectionResult,
     targetResolution: ResolutionConfig,
-    padding: number = 0.3 // 30% padding around face
+    padding: number = 0.6 // 60% padding around face for better framing
   ): HTMLCanvasElement {
     const canvas = document.createElement('canvas');
     canvas.width = targetResolution.width;
     canvas.height = targetResolution.height;
     const ctx = canvas.getContext('2d')!;
 
-    const { eyePoints, faceBounds } = faceResult;
+    // Enable high-quality rendering for better results
+    if (this.useSubPixelPrecision) {
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+    }
+
+    const { eyePoints, faceBounds, landmarks } = faceResult;
     const { width: canvasWidth, height: canvasHeight } = targetResolution;
 
     if (!faceBounds) {
@@ -255,11 +326,31 @@ export class ImageAligner {
       return this.alignImageFull(sourceImage, eyePoints, targetResolution);
     }
 
-    // Calculate padded face region
+    // Try to use enhanced eye detection if landmarks are available
+    let enhancedEyePoints = eyePoints;
+    if (landmarks && landmarks.length > 0) {
+      try {
+        const leftEyeIndices = [33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161];
+        const rightEyeIndices = [362, 382, 381, 380, 374, 373, 390, 249, 263, 466, 388, 387, 386, 385, 384];
+        
+        const leftEyeCenter = this.calculatePreciseEyeCenter(landmarks, leftEyeIndices);
+        const rightEyeCenter = this.calculatePreciseEyeCenter(landmarks, rightEyeIndices);
+        
+        enhancedEyePoints = {
+          left: [leftEyeCenter[0] * sourceImage.width, leftEyeCenter[1] * sourceImage.height],
+          right: [rightEyeCenter[0] * sourceImage.width, rightEyeCenter[1] * sourceImage.height]
+        };
+      } catch (error) {
+        console.log('Enhanced eye detection failed, using fallback:', error);
+        // Continue with original eye points
+      }
+    }
+
+    // Calculate padded face region with extra vertical padding
     const faceWidth = faceBounds.width;
     const faceHeight = faceBounds.height;
     const paddingX = faceWidth * padding;
-    const paddingY = faceHeight * padding;
+    const paddingY = faceHeight * (padding + 0.2); // Extra 20% vertical padding for forehead/chin
 
     const cropLeft = Math.max(0, faceBounds.left - paddingX);
     const cropTop = Math.max(0, faceBounds.top - paddingY);
@@ -269,10 +360,10 @@ export class ImageAligner {
     const cropWidth = cropRight - cropLeft;
     const cropHeight = cropBottom - cropTop;
 
-    // Adjust eye points relative to crop region
+    // Adjust eye points relative to crop region (use enhanced points if available)
     const adjustedEyePoints: EyePoints = {
-      left: [eyePoints.left[0] - cropLeft, eyePoints.left[1] - cropTop],
-      right: [eyePoints.right[0] - cropLeft, eyePoints.right[1] - cropTop]
+      left: [enhancedEyePoints.left[0] - cropLeft, enhancedEyePoints.left[1] - cropTop],
+      right: [enhancedEyePoints.right[0] - cropLeft, enhancedEyePoints.right[1] - cropTop]
     };
 
     // Calculate eye properties in cropped region

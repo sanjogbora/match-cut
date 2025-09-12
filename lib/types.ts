@@ -12,6 +12,8 @@ export interface ImageData {
   faceResult?: FaceDetectionResult;
   alignedCanvas?: HTMLCanvasElement;
   processedUrl?: string;
+  error?: string; // Error message if processing failed
+  status: 'pending' | 'processing' | 'aligned' | 'failed';
 }
 
 export interface ProcessingStatus {

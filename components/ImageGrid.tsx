@@ -24,6 +24,12 @@ export default function ImageGrid({
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
+  // Helper function to safely get image status (fallback for existing images)
+  const getImageStatus = (image: ImageData): 'pending' | 'processing' | 'aligned' | 'failed' => {
+    if (image.status) return image.status;
+    return image.aligned ? 'aligned' : 'pending';
+  };
+
   const handleMoveUp = (index: number) => {
     if (index > 0) {
       onReorderImages(index, index - 1);
@@ -89,8 +95,10 @@ export default function ImageGrid({
         
         <div className="text-right">
           <div className="text-sm text-gray-500">
-            {images.filter(img => img.aligned).length} aligned, {' '}
-            {images.filter(img => !img.aligned).length} pending
+            {images.filter(img => getImageStatus(img) === 'aligned').length} aligned, {' '}
+            {images.filter(img => getImageStatus(img) === 'processing').length} processing, {' '}
+            {images.filter(img => getImageStatus(img) === 'failed').length} failed, {' '}
+            {images.filter(img => getImageStatus(img) === 'pending').length} pending
           </div>
           {images.length > 1 && (
             <div className="text-xs text-gray-400 mt-1">
@@ -114,8 +122,10 @@ export default function ImageGrid({
               "relative group bg-white rounded-lg shadow-sm border-2 transition-all duration-200",
               "hover:shadow-md hover:scale-105",
               {
-                "border-green-300 bg-green-50": image.aligned,
-                "border-orange-300 bg-orange-50": !image.aligned,
+                "border-green-300 bg-green-50": getImageStatus(image) === 'aligned',
+                "border-blue-300 bg-blue-50": getImageStatus(image) === 'processing',
+                "border-orange-300 bg-orange-50": getImageStatus(image) === 'pending',
+                "border-red-300 bg-red-50": getImageStatus(image) === 'failed',
                 "opacity-50": disabled,
                 "opacity-60 transform scale-95": draggedIndex === index,
                 "border-blue-400 border-dashed bg-blue-50": dragOverIndex === index && draggedIndex !== index,
@@ -137,8 +147,10 @@ export default function ImageGrid({
               <div className={cn(
                 "absolute top-2 left-2 w-3 h-3 rounded-full",
                 {
-                  "bg-green-500": image.aligned,
-                  "bg-orange-500 animate-pulse": !image.aligned,
+                  "bg-green-500": getImageStatus(image) === 'aligned',
+                  "bg-blue-500 animate-pulse": getImageStatus(image) === 'processing',
+                  "bg-orange-500": getImageStatus(image) === 'pending',
+                  "bg-red-500": getImageStatus(image) === 'failed',
                 }
               )} />
               
@@ -153,12 +165,12 @@ export default function ImageGrid({
                     <Eye className="w-4 h-4" />
                   </button>
                   
-                  {!image.aligned && (
+                  {(getImageStatus(image) === 'failed' || getImageStatus(image) === 'pending') && (
                     <button
                       onClick={() => onRetryAlignment(image.id)}
                       disabled={disabled}
                       className="p-2 bg-white rounded-full hover:bg-gray-100 transition-colors disabled:opacity-50"
-                      title="Retry Alignment"
+                      title={getImageStatus(image) === 'failed' ? 'Retry Failed Alignment' : 'Retry Alignment'}
                     >
                       <RotateCcw className="w-4 h-4" />
                     </button>
@@ -181,11 +193,16 @@ export default function ImageGrid({
                 <div className={cn(
                   "text-xs font-medium",
                   {
-                    "text-green-600": image.aligned,
-                    "text-orange-600": !image.aligned,
+                    "text-green-600": getImageStatus(image) === 'aligned',
+                    "text-blue-600": getImageStatus(image) === 'processing',
+                    "text-orange-600": getImageStatus(image) === 'pending',
+                    "text-red-600": getImageStatus(image) === 'failed',
                   }
                 )}>
-                  {image.aligned ? 'Aligned' : 'Processing...'}
+                  {getImageStatus(image) === 'aligned' && 'Aligned'}
+                  {getImageStatus(image) === 'processing' && 'Processing...'}
+                  {getImageStatus(image) === 'pending' && 'Pending'}
+                  {getImageStatus(image) === 'failed' && 'Failed'}
                 </div>
                 
                 <div className="flex space-x-1">
@@ -221,9 +238,24 @@ export default function ImageGrid({
             </button>
 
             {/* Processing Indicator */}
-            {!image.aligned && (
+            {getImageStatus(image) === 'processing' && (
               <div className="absolute inset-0 bg-white bg-opacity-90 flex items-center justify-center rounded-lg">
                 <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+              </div>
+            )}
+
+            {/* Failed Indicator with Error Message */}
+            {getImageStatus(image) === 'failed' && image.error && (
+              <div 
+                className="absolute inset-0 bg-red-50 bg-opacity-95 flex items-center justify-center rounded-lg p-2"
+                title={image.error}
+              >
+                <div className="text-center">
+                  <div className="text-red-600 text-lg mb-1">⚠</div>
+                  <div className="text-xs text-red-700 leading-tight">
+                    {image.error.split('.')[0]}...
+                  </div>
+                </div>
               </div>
             )}
           </div>
@@ -255,7 +287,12 @@ export default function ImageGrid({
               
               <div className="mt-4 space-y-2 text-sm text-gray-600">
                 <div>Size: {formatFileSize(selectedImage.file.size)}</div>
-                <div>Status: {selectedImage.aligned ? 'Aligned' : 'Processing'}</div>
+                <div>Status: {getImageStatus(selectedImage).charAt(0).toUpperCase() + getImageStatus(selectedImage).slice(1)}</div>
+                {selectedImage.error && (
+                  <div className="text-red-600 bg-red-50 p-2 rounded text-xs">
+                    <strong>Error:</strong> {selectedImage.error}
+                  </div>
+                )}
                 {selectedImage.eyePoints && (
                   <div>
                     Eye Points: Left({selectedImage.eyePoints.left[0].toFixed(0)}, {selectedImage.eyePoints.left[1].toFixed(0)}), 

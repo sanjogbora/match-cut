@@ -25,7 +25,7 @@ export default function AnimationPreview({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number>();
   const [currentFrame, setCurrentFrame] = useState(0);
-  const lastFrameTimeRef = useRef(0);
+  const [lastFrameTime, setLastFrameTime] = useState(0);
 
   const drawFrame = useCallback((frameIndex: number) => {
     const canvas = canvasRef.current;
@@ -54,7 +54,7 @@ export default function AnimationPreview({
   // Start/stop animation
   useEffect(() => {
     if (isPlaying && frames.length > 0) {
-      lastFrameTimeRef.current = performance.now();
+      let lastTime = performance.now();
       
       const animateFrame = (timestamp: number) => {
         if (!isPlaying || frames.length === 0) {
@@ -62,13 +62,13 @@ export default function AnimationPreview({
           return;
         }
 
-        if (timestamp - lastFrameTimeRef.current >= frameDuration * 1000) {
+        if (timestamp - lastTime >= frameDuration * 1000) {
           setCurrentFrame(prev => {
             const nextFrame = (prev + 1) % frames.length;
             onFrameChange?.(nextFrame);
             return nextFrame;
           });
-          lastFrameTimeRef.current = timestamp;
+          lastTime = timestamp;
         }
 
         animationRef.current = requestAnimationFrame(animateFrame);

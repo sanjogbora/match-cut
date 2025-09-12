@@ -56,6 +56,12 @@ export default function Home() {
   useEffect(() => {
     const initializeServices = async () => {
       try {
+        // Migrate existing images to have status property
+        setImages(prev => prev.map(img => ({
+          ...img,
+          status: img.status || (img.aligned ? 'aligned' as const : 'pending' as const)
+        })));
+
         setProcessingStatus({
           isProcessing: true,
           currentStep: 'Initializing AI services...',
@@ -113,6 +119,7 @@ export default function Home() {
       file,
       url: URL.createObjectURL(file),
       aligned: false,
+      status: 'pending' as const,
     }));
 
     setImages(prev => [...prev, ...newImages]);
@@ -125,8 +132,11 @@ export default function Home() {
   const processImages = useCallback(async (imagesToProcess: ImageData[]) => {
     if (!faceDetector.current || !imageAligner.current) return;
 
-    const unalignedImages = imagesToProcess.filter(img => !img.aligned);
+    const unalignedImages = imagesToProcess.filter(img => img.status === 'pending' || img.status === 'failed');
     if (unalignedImages.length === 0) return;
+
+    // Reset smoothing state for new batch of images
+    imageAligner.current.resetSmoothingState();
 
     setProcessingStatus({
       isProcessing: true,
@@ -136,6 +146,13 @@ export default function Home() {
 
     const resolution = RESOLUTION_CONFIGS[exportSettings.resolution];
     const processedImages: ImageData[] = [];
+
+    // First, mark all images as processing
+    setImages(prev => prev.map(img => 
+      unalignedImages.some(u => u.id === img.id) 
+        ? { ...img, status: 'processing' as const }
+        : img
+    ));
 
     for (let i = 0; i < unalignedImages.length; i++) {
       const image = unalignedImages[i];
@@ -158,11 +175,13 @@ export default function Home() {
           // Show more helpful message to user
           setProcessingStatus(prev => ({
             ...prev,
-            currentStep: `No face found in ${image.file.name} - skipping`,
+            currentStep: `No face found in ${image.file.name} - marked as failed`,
           }));
           processedImages.push({
             ...image,
             aligned: false,
+            status: 'failed' as const,
+            error: 'No face detected in this image. Please ensure the image contains a clear, front-facing face.',
           });
           continue;
         }
@@ -177,6 +196,8 @@ export default function Home() {
           processedImages.push({
             ...image,
             aligned: false,
+            status: 'failed' as const,
+            error: 'Face detected but eye points are invalid. Try with a clearer image with visible eyes.',
           });
           continue;
         }
@@ -210,10 +231,12 @@ export default function Home() {
         processedImages.push({
           ...image,
           aligned: true,
+          status: 'aligned' as const,
           eyePoints: faceResult.eyePoints,
           faceResult: faceResult,
           alignedCanvas,
           processedUrl,
+          error: undefined, // Clear any previous errors
         });
 
       } catch (error) {
@@ -221,6 +244,8 @@ export default function Home() {
         processedImages.push({
           ...image,
           aligned: false,
+          status: 'failed' as const,
+          error: `Processing failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
         });
       }
     }
@@ -241,11 +266,11 @@ export default function Home() {
     await generatePreviewFrames(imagesToProcess.map(img => {
       const processed = processedImages.find(p => p.id === img.id);
       return processed || img;
-    }).filter(img => img.aligned));
+    }).filter(img => img.status === 'aligned'));
 
     setProcessingStatus({
       isProcessing: false,
-      currentStep: `Processing complete - ${processedImages.filter(p => p.aligned).length} of ${processedImages.length} images aligned`,
+      currentStep: `Processing complete - ${processedImages.filter(p => p.status === 'aligned').length} of ${processedImages.length} images aligned`,
       progress: 1,
     });
   }, [exportSettings.resolution, exportSettings.alignmentMode]);
@@ -295,7 +320,7 @@ export default function Home() {
     setImages(prev => {
       const filtered = prev.filter(img => img.id !== id);
       // Update preview frames
-      generatePreviewFrames(filtered.filter(img => img.aligned));
+      generatePreviewFrames(filtered.filter(img => img.status === 'aligned'));
       return filtered;
     });
   }, [generatePreviewFrames]);
@@ -308,7 +333,7 @@ export default function Home() {
       newImages.splice(toIndex, 0, moved);
       
       // Update preview frames
-      generatePreviewFrames(newImages.filter(img => img.aligned));
+      generatePreviewFrames(newImages.filter(img => img.status === 'aligned'));
       return newImages;
     });
   }, [generatePreviewFrames]);
@@ -362,13 +387,13 @@ export default function Home() {
 
   // Update preview frames when settings change
   useEffect(() => {
-    const alignedImages = images.filter(img => img.aligned);
+    const alignedImages = images.filter(img => img.status === 'aligned');
     generatePreviewFrames(alignedImages);
   }, [images, generatePreviewFrames]);
 
   // Reprocess images when alignment mode changes
   useEffect(() => {
-    const alignedImages = images.filter(img => img.aligned && img.faceResult);
+    const alignedImages = images.filter(img => img.status === 'aligned' && img.faceResult);
     if (alignedImages.length > 0) {
       // Re-align existing images with new mode
       alignedImages.forEach(async (image) => {
@@ -583,7 +608,7 @@ export default function Home() {
             
             <div className="card p-6 text-center">
               <div className="text-3xl font-bold text-green-600 mb-2">
-                {images.filter(img => img.aligned).length}
+                {images.filter(img => img.status === 'aligned').length}
               </div>
               <div className="text-gray-600">Successfully Aligned</div>
             </div>
