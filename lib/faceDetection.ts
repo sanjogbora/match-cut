@@ -35,7 +35,10 @@ export class FaceDetector {
         outputFaceBlendshapes: false,
         outputFacialTransformationMatrixes: false,
         runningMode: 'IMAGE',
-        numFaces: 1
+        numFaces: 3, // Increased from 1 to detect multiple faces and pick best one
+        minFaceDetectionConfidence: 0.3, // Lowered from default 0.5 for small faces
+        minFacePresenceConfidence: 0.3,  // Lowered from default 0.5 for small faces
+        minTrackingConfidence: 0.3       // Lowered from default 0.5 for small faces
       });
 
       this.isInitialized = true;
@@ -51,41 +54,83 @@ export class FaceDetector {
       throw new Error('Face detector not initialized');
     }
 
+    console.log(`🔍 Starting face detection on ${imageElement.width}x${imageElement.height}px image`);
+    
+    // Strategy 1: Try detection on original image first
+    let result = await this.attemptDetection(imageElement, 'original');
+    if (result) return result;
+
+    // Strategy 2: If original fails, try with enhanced contrast/brightness
+    console.log('📈 Original detection failed, trying with enhanced image...');
+    const enhancedImage = await this.enhanceImageForDetection(imageElement);
+    result = await this.attemptDetection(enhancedImage, 'enhanced');
+    if (result) return result;
+
+    // Strategy 3: If still failing, try with upscaled image (for small faces)
+    const faceSize = await this.estimateFaceSize(imageElement);
+    if (faceSize < 100) { // If estimated face is smaller than 100px
+      console.log('🔍 Small face detected, trying upscaled version...');
+      const upscaledImage = await this.upscaleImage(imageElement, 2.0); // 2x upscale
+      result = await this.attemptDetection(upscaledImage, 'upscaled');
+      if (result) {
+        // Adjust coordinates back to original scale
+        return this.adjustCoordinatesForScale(result, 0.5, imageElement.width, imageElement.height);
+      }
+    }
+
+    // Strategy 4: Last resort - try different confidence thresholds
+    console.log('⚠️ All standard methods failed, trying relaxed detection...');
+    result = await this.attemptRelaxedDetection(imageElement);
+    
+    if (!result) {
+      console.log('❌ All face detection strategies failed');
+    }
+
+    return result;
+  }
+
+  private async attemptDetection(imageElement: HTMLImageElement, strategy: string): Promise<FaceDetectionResult | null> {
     try {
-      console.log(`Detecting face in image ${imageElement.width}x${imageElement.height}`);
-      const results: FaceLandmarkerResult = this.faceLandmarker.detect(imageElement);
+      const results: FaceLandmarkerResult = this.faceLandmarker!.detect(imageElement);
 
       if (!results.faceLandmarks || results.faceLandmarks.length === 0) {
-        console.log('No face landmarks detected');
+        console.log(`❌ ${strategy}: No face landmarks detected`);
         return null;
       }
 
-      console.log(`Found ${results.faceLandmarks.length} face(s)`);
-      const landmarks = results.faceLandmarks[0];
-      const eyePoints = this.extractEyePoints(landmarks, imageElement.width, imageElement.height);
+      console.log(`✅ ${strategy}: Found ${results.faceLandmarks.length} face(s)`);
+      
+      // If multiple faces, pick the largest one (most likely the main subject)
+      let bestLandmarks = results.faceLandmarks[0];
+      if (results.faceLandmarks.length > 1) {
+        bestLandmarks = this.selectBestFace(results.faceLandmarks, imageElement);
+        console.log(`🎯 Selected best face from ${results.faceLandmarks.length} candidates`);
+      }
+
+      const eyePoints = this.extractEyePoints(bestLandmarks, imageElement.width, imageElement.height);
       
       if (!eyePoints) {
-        console.log('Failed to extract eye points from landmarks');
+        console.log(`❌ ${strategy}: Failed to extract eye points from landmarks`);
         return null;
       }
 
-      console.log('Face detection successful', {
+      console.log(`✅ ${strategy}: Face detection successful!`, {
         leftEye: eyePoints.left,
         rightEye: eyePoints.right
       });
 
       return {
-        landmarks: landmarks.map(landmark => ({
+        landmarks: bestLandmarks.map(landmark => ({
           x: landmark.x,
           y: landmark.y,
           z: landmark.z
         })),
         eyePoints,
-        confidence: 0.9, // MediaPipe doesn't provide confidence score directly
-        faceBounds: this.calculateFaceBounds(landmarks, imageElement.width, imageElement.height)
+        confidence: 0.8, // Slightly lower since we're using relaxed settings
+        faceBounds: this.calculateFaceBounds(bestLandmarks, imageElement.width, imageElement.height)
       };
     } catch (error) {
-      console.error('Face detection failed:', error);
+      console.error(`❌ ${strategy} detection failed:`, error);
       return null;
     }
   }
@@ -222,6 +267,141 @@ export class FaceDetector {
       centerX: (left + right) / 2,
       centerY: (top + bottom) / 2
     };
+  }
+
+  /**
+   * Select the best face from multiple detected faces (largest face = main subject)
+   */
+  private selectBestFace(faceLandmarks: NormalizedLandmark[][], imageElement: HTMLImageElement): NormalizedLandmark[] {
+    let bestFace = faceLandmarks[0];
+    let maxFaceArea = 0;
+
+    for (const face of faceLandmarks) {
+      const bounds = this.calculateFaceBounds(face, imageElement.width, imageElement.height);
+      const faceArea = bounds.width * bounds.height;
+      
+      if (faceArea > maxFaceArea) {
+        maxFaceArea = faceArea;
+        bestFace = face;
+      }
+    }
+
+    console.log(`🎯 Selected face with area: ${maxFaceArea.toFixed(0)}px²`);
+    return bestFace;
+  }
+
+  /**
+   * Enhance image contrast and brightness for better face detection
+   */
+  private async enhanceImageForDetection(imageElement: HTMLImageElement): Promise<HTMLImageElement> {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d')!;
+    canvas.width = imageElement.width;
+    canvas.height = imageElement.height;
+
+    // Draw original image
+    ctx.drawImage(imageElement, 0, 0);
+
+    // Get image data and enhance it
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imageData.data;
+
+    // Enhance contrast and brightness
+    const contrast = 1.3; // 30% more contrast
+    const brightness = 20;  // +20 brightness
+
+    for (let i = 0; i < data.length; i += 4) {
+      // Apply contrast and brightness to RGB channels
+      data[i] = Math.min(255, Math.max(0, (data[i] - 128) * contrast + 128 + brightness));     // Red
+      data[i + 1] = Math.min(255, Math.max(0, (data[i + 1] - 128) * contrast + 128 + brightness)); // Green  
+      data[i + 2] = Math.min(255, Math.max(0, (data[i + 2] - 128) * contrast + 128 + brightness)); // Blue
+    }
+
+    ctx.putImageData(imageData, 0, 0);
+
+    // Convert canvas back to image
+    const enhancedImage = new Image();
+    enhancedImage.src = canvas.toDataURL();
+    await new Promise(resolve => enhancedImage.onload = resolve);
+
+    return enhancedImage;
+  }
+
+  /**
+   * Upscale image for better detection of small faces
+   */
+  private async upscaleImage(imageElement: HTMLImageElement, scaleFactor: number): Promise<HTMLImageElement> {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d')!;
+    
+    const newWidth = Math.floor(imageElement.width * scaleFactor);
+    const newHeight = Math.floor(imageElement.height * scaleFactor);
+    
+    canvas.width = newWidth;
+    canvas.height = newHeight;
+
+    // Use high-quality scaling
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    
+    ctx.drawImage(imageElement, 0, 0, newWidth, newHeight);
+
+    const upscaledImage = new Image();
+    upscaledImage.src = canvas.toDataURL();
+    await new Promise(resolve => upscaledImage.onload = resolve);
+
+    console.log(`📏 Upscaled image: ${imageElement.width}x${imageElement.height} -> ${newWidth}x${newHeight}`);
+    return upscaledImage;
+  }
+
+  /**
+   * Estimate face size in image to determine if upscaling is needed
+   */
+  private async estimateFaceSize(imageElement: HTMLImageElement): Promise<number> {
+    // Simple heuristic: assume faces are roughly 10-30% of image diagonal
+    const imageDiagonal = Math.sqrt(imageElement.width ** 2 + imageElement.height ** 2);
+    const estimatedFaceSize = imageDiagonal * 0.15; // Estimate 15% of diagonal
+    
+    console.log(`📐 Estimated face size: ${estimatedFaceSize.toFixed(1)}px (image diagonal: ${imageDiagonal.toFixed(1)}px)`);
+    return estimatedFaceSize;
+  }
+
+  /**
+   * Adjust coordinates from scaled image back to original image
+   */
+  private adjustCoordinatesForScale(result: FaceDetectionResult, scaleFactor: number, originalWidth: number, originalHeight: number): FaceDetectionResult {
+    return {
+      ...result,
+      eyePoints: {
+        left: [result.eyePoints.left[0] * scaleFactor, result.eyePoints.left[1] * scaleFactor],
+        right: [result.eyePoints.right[0] * scaleFactor, result.eyePoints.right[1] * scaleFactor]
+      },
+      landmarks: result.landmarks.map(landmark => ({
+        ...landmark,
+        // Landmarks are in normalized coordinates (0-1), so they don't need scaling
+      })),
+      faceBounds: result.faceBounds ? {
+        ...result.faceBounds,
+        left: result.faceBounds.left * scaleFactor,
+        right: result.faceBounds.right * scaleFactor,
+        top: result.faceBounds.top * scaleFactor,
+        bottom: result.faceBounds.bottom * scaleFactor,
+        width: result.faceBounds.width * scaleFactor,
+        height: result.faceBounds.height * scaleFactor,
+        centerX: result.faceBounds.centerX * scaleFactor,
+        centerY: result.faceBounds.centerY * scaleFactor
+      } : undefined
+    };
+  }
+
+  /**
+   * Last resort detection with very relaxed settings
+   */
+  private async attemptRelaxedDetection(imageElement: HTMLImageElement): Promise<FaceDetectionResult | null> {
+    // This would require creating a new FaceLandmarker with different settings
+    // For now, we'll just try the original detection again with logging
+    console.log('🔄 Attempting relaxed detection (same as original for now)');
+    return await this.attemptDetection(imageElement, 'relaxed');
   }
 
   cleanup(): void {

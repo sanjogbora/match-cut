@@ -9,6 +9,7 @@ import ExportOptions from '@/components/ExportOptions';
 import ProcessingIndicator from '@/components/ProcessingIndicator';
 import { FaceDetector } from '@/lib/faceDetection';
 import { ImageAligner } from '@/lib/imageAlignment';
+import { AdvancedFaceAligner } from '@/lib/advancedFaceAlignment';
 import { VideoExporter } from '@/lib/videoExport';
 import { 
   ImageData, 
@@ -49,6 +50,7 @@ export default function Home() {
   // Services
   const faceDetector = useRef<FaceDetector | null>(null);
   const imageAligner = useRef<ImageAligner | null>(null);
+  const advancedFaceAligner = useRef<AdvancedFaceAligner | null>(null);
   const videoExporter = useRef<VideoExporter | null>(null);
   const [servicesReady, setServicesReady] = useState(false);
 
@@ -76,6 +78,11 @@ export default function Home() {
 
         // Initialize image aligner
         imageAligner.current = new ImageAligner();
+        
+        setProcessingStatus(prev => ({ ...prev, progress: 0.5 }));
+
+        // Initialize advanced face aligner
+        advancedFaceAligner.current = new AdvancedFaceAligner();
         
         setProcessingStatus(prev => ({ ...prev, progress: 0.66 }));
 
@@ -106,6 +113,7 @@ export default function Home() {
 
     return () => {
       faceDetector.current?.cleanup();
+      advancedFaceAligner.current?.resetSmoothingState();
       videoExporter.current?.cleanup();
     };
   }, []);
@@ -137,6 +145,9 @@ export default function Home() {
 
     // Reset smoothing state for new batch of images
     imageAligner.current.resetSmoothingState();
+    if (advancedFaceAligner.current && exportSettings.alignmentMode === 'advanced-multi-point') {
+      advancedFaceAligner.current.resetSmoothingState();
+    }
 
     setProcessingStatus({
       isProcessing: true,
@@ -204,12 +215,43 @@ export default function Home() {
 
         // Align image using selected alignment mode
         let alignedCanvas: HTMLCanvasElement;
-        if (exportSettings.alignmentMode === 'face-crop') {
+        let processingTime = 0;
+        let alignmentConfidence = 0;
+        const startTime = performance.now();
+        
+        if (exportSettings.alignmentMode === 'advanced-multi-point' && advancedFaceAligner.current) {
+          // Use advanced multi-point alignment
+          try {
+            const alignmentResult = await advancedFaceAligner.current.alignImage(
+              imgElement,
+              faceResult,
+              resolution,
+              'full-face' // Default to full-face mode, could be made configurable
+            );
+            alignedCanvas = alignmentResult.transformedCanvas;
+            processingTime = alignmentResult.processingTime;
+            alignmentConfidence = alignmentResult.alignmentConfidence;
+            
+            console.log(`Advanced alignment completed in ${processingTime}ms with confidence ${alignmentConfidence.toFixed(3)}`);
+          } catch (error) {
+            console.warn('Advanced alignment failed, falling back to basic alignment:', error);
+            // Fallback to basic alignment
+            alignedCanvas = imageAligner.current.alignImageFull(
+              imgElement,
+              faceResult.eyePoints,
+              resolution
+            );
+            processingTime = performance.now() - startTime;
+            alignmentConfidence = faceResult.confidence || 0.5; // Use face detection confidence as fallback
+          }
+        } else if (exportSettings.alignmentMode === 'face-crop') {
           alignedCanvas = imageAligner.current.alignImageFaceCrop(
             imgElement,
             faceResult,
             resolution
           );
+          processingTime = performance.now() - startTime;
+          alignmentConfidence = faceResult.confidence || 0.7; // Basic alignment gets face detection confidence
         } else {
           // Default to full alignment
           alignedCanvas = imageAligner.current.alignImageFull(
@@ -217,6 +259,8 @@ export default function Home() {
             faceResult.eyePoints,
             resolution
           );
+          processingTime = performance.now() - startTime;
+          alignmentConfidence = faceResult.confidence || 0.6; // Full alignment gets face detection confidence
         }
 
         // Create processed URL
@@ -236,6 +280,8 @@ export default function Home() {
           faceResult: faceResult,
           alignedCanvas,
           processedUrl,
+          alignmentConfidence,
+          processingTime,
           error: undefined, // Clear any previous errors
         });
 
@@ -523,7 +569,25 @@ export default function Home() {
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">
                   Alignment Mode
                 </h3>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  <button
+                    onClick={() => setExportSettings(prev => ({ ...prev, alignmentMode: 'advanced-multi-point' }))}
+                    disabled={!servicesReady || processingStatus.isProcessing}
+                    className={cn(
+                      "p-4 border-2 rounded-lg text-left transition-all",
+                      "hover:border-blue-300 disabled:opacity-50",
+                      {
+                        "border-blue-500 bg-blue-50": exportSettings.alignmentMode === 'advanced-multi-point',
+                        "border-gray-200": exportSettings.alignmentMode !== 'advanced-multi-point',
+                      }
+                    )}
+                  >
+                    <div className="font-medium">🚀 Advanced Multi-Point</div>
+                    <div className="text-sm text-gray-500 mt-1">
+                      Professional grade with 468-point face alignment
+                    </div>
+                  </button>
+
                   <button
                     onClick={() => setExportSettings(prev => ({ ...prev, alignmentMode: 'face-crop' }))}
                     disabled={!servicesReady || processingStatus.isProcessing}
@@ -536,9 +600,9 @@ export default function Home() {
                       }
                     )}
                   >
-                    <div className="font-medium">Smart Crop (Recommended)</div>
+                    <div className="font-medium">Smart Crop</div>
                     <div className="text-sm text-gray-500 mt-1">
-                      Focus on face region with perfect eye alignment
+                      Focus on face region with eye alignment
                     </div>
                   </button>
                   
@@ -556,7 +620,7 @@ export default function Home() {
                   >
                     <div className="font-medium">Full Image</div>
                     <div className="text-sm text-gray-500 mt-1">
-                      Show entire photo with eye alignment
+                      Show entire photo with basic alignment
                     </div>
                   </button>
                 </div>

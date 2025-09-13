@@ -189,41 +189,62 @@ export default function ImageGrid({
                 {formatFileSize(image.file.size)}
               </div>
               
-              <div className="flex items-center justify-between">
-                <div className={cn(
-                  "text-xs font-medium",
-                  {
-                    "text-green-600": getImageStatus(image) === 'aligned',
-                    "text-blue-600": getImageStatus(image) === 'processing',
-                    "text-orange-600": getImageStatus(image) === 'pending',
-                    "text-red-600": getImageStatus(image) === 'failed',
-                  }
-                )}>
-                  {getImageStatus(image) === 'aligned' && 'Aligned'}
-                  {getImageStatus(image) === 'processing' && 'Processing...'}
-                  {getImageStatus(image) === 'pending' && 'Pending'}
-                  {getImageStatus(image) === 'failed' && 'Failed'}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <div className={cn(
+                    "text-xs font-medium",
+                    {
+                      "text-green-600": getImageStatus(image) === 'aligned',
+                      "text-blue-600": getImageStatus(image) === 'processing',
+                      "text-orange-600": getImageStatus(image) === 'pending',
+                      "text-red-600": getImageStatus(image) === 'failed',
+                    }
+                  )}>
+                    {getImageStatus(image) === 'aligned' && 'Aligned'}
+                    {getImageStatus(image) === 'processing' && 'Processing...'}
+                    {getImageStatus(image) === 'pending' && 'Pending'}
+                    {getImageStatus(image) === 'failed' && 'Failed'}
+                  </div>
+                  
+                  <div className="flex space-x-1">
+                    <button
+                      onClick={() => handleMoveUp(index)}
+                      disabled={disabled || index === 0}
+                      className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-50"
+                      title="Move Up"
+                    >
+                      <ArrowUp className="w-3 h-3" />
+                    </button>
+                    
+                    <button
+                      onClick={() => handleMoveDown(index)}
+                      disabled={disabled || index === images.length - 1}
+                      className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-50"
+                      title="Move Down"
+                    >
+                      <ArrowDown className="w-3 h-3" />
+                    </button>
+                  </div>
                 </div>
                 
-                <div className="flex space-x-1">
-                  <button
-                    onClick={() => handleMoveUp(index)}
-                    disabled={disabled || index === 0}
-                    className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-50"
-                    title="Move Up"
-                  >
-                    <ArrowUp className="w-3 h-3" />
-                  </button>
-                  
-                  <button
-                    onClick={() => handleMoveDown(index)}
-                    disabled={disabled || index === images.length - 1}
-                    className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-50"
-                    title="Move Down"
-                  >
-                    <ArrowDown className="w-3 h-3" />
-                  </button>
-                </div>
+                {/* Confidence and Processing Time */}
+                {getImageStatus(image) === 'aligned' && (
+                  <div className="flex items-center justify-between text-xs text-gray-500">
+                    {image.alignmentConfidence !== undefined && (
+                      <div title="Alignment quality confidence">
+                        Conf: {(image.alignmentConfidence * 100).toFixed(0)}%
+                      </div>
+                    )}
+                    {image.processingTime !== undefined && (
+                      <div title="Processing time">
+                        {image.processingTime < 1000 
+                          ? `${Math.round(image.processingTime)}ms`
+                          : `${(image.processingTime / 1000).toFixed(1)}s`
+                        }
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 

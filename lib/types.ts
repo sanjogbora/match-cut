@@ -14,6 +14,8 @@ export interface ImageData {
   processedUrl?: string;
   error?: string; // Error message if processing failed
   status: 'pending' | 'processing' | 'aligned' | 'failed';
+  alignmentConfidence?: number; // Confidence score from 0-1 for alignment quality
+  processingTime?: number; // Time taken for processing in milliseconds
 }
 
 export interface ProcessingStatus {
@@ -29,7 +31,7 @@ export interface ExportSettings {
   frameDuration: number;
   addSound: boolean;
   loop: boolean;
-  alignmentMode: 'full' | 'face-crop' | 'smart-frame';
+  alignmentMode: 'full' | 'face-crop' | 'smart-frame' | 'advanced-multi-point';
 }
 
 export interface ResolutionConfig {
