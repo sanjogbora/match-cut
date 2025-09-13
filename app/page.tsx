@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { Eye, Zap, Download, Github, Info } from 'lucide-react';
+import { Eye, Zap, Download, Instagram } from 'lucide-react';
 import ImageUpload from '@/components/ImageUpload';
 import ImageGrid from '@/components/ImageGrid';
 import AnimationPreview from '@/components/AnimationPreview';
@@ -451,18 +451,28 @@ export default function Home() {
             </div>
             
             <div className="flex items-center space-x-4">
-              <a
-                href="https://github.com"
+              <a 
+                href="https://www.producthunt.com/products/face-match-cut-generator?embed=true&utm_source=badge-featured&utm_medium=badge&utm_source=badge-face&#0045;match&#0045;cut&#0045;generator" 
                 target="_blank"
-                rel="noopener noreferrer"
-                className="text-gray-500 hover:text-gray-700"
+                className="hover:opacity-80 transition-opacity"
               >
-                <Github className="w-5 h-5" />
+                <img 
+                  src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1015749&theme=light&t=1757742596193" 
+                  alt="Face Match Cut Generator - Upload Photos, Generate Eye-Aligned Animations in Seconds | Product Hunt" 
+                  style={{ width: '250px', height: '54px' }} 
+                  width="250" 
+                  height="54" 
+                />
               </a>
               
-              <button className="text-gray-500 hover:text-gray-700">
-                <Info className="w-5 h-5" />
-              </button>
+              <a
+                href="https://www.instagram.com/sanjogsays/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-gray-500 hover:text-gray-700 transition-colors"
+              >
+                <Instagram className="w-5 h-5" />
+              </a>
             </div>
           </div>
         </div>
