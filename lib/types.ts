@@ -23,6 +23,15 @@ export interface ProcessingStatus {
   error?: string;
 }
 
+export interface BeatSyncSettings {
+  enabled: boolean;
+  musicFile?: File;
+  beatSensitivity: number;
+  syncMode: 'auto' | 'manual';
+  manualBpm?: number;
+  beatOffset: number;
+}
+
 export interface ExportSettings {
   format: 'gif' | 'mp4';
   resolution: '480p' | '720p' | '1080p';
@@ -32,6 +41,7 @@ export interface ExportSettings {
   builtinSound: 'click' | 'shutter' | 'pop';
   customAudioFile?: File;
   audioVolume: number;
+  beatSync: BeatSyncSettings;
   loop: boolean;
   alignmentMode: 'full' | 'face-crop' | 'smart-frame';
 }

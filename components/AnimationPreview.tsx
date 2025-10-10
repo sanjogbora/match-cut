@@ -72,17 +72,15 @@ export default function AnimationPreview({
             const nextFrame = (prev + 1) % frames.length;
             onFrameChange?.(nextFrame);
             
-            // Play audio on frame change
+            // Play sound effect on frame change
             if (audioManager && audioSettings?.addSound && audioSettings.format === 'mp4') {
-              const audioConfig = {
-                enabled: audioSettings.addSound,
-                type: audioSettings.soundType,
-                builtinSound: audioSettings.builtinSound,
-                customFile: audioSettings.customAudioFile,
-                volume: audioSettings.audioVolume,
-                syncMode: 'frame-start' as const
-              };
-              audioManager.playSound(audioConfig);
+              audioManager.playSoundEffect(
+                audioSettings.soundType,
+                audioSettings.builtinSound,
+                audioSettings.customAudioFile,
+                audioSettings.audioVolume,
+                frameDuration // Limit sound to frame duration
+              );
             }
             
             return nextFrame;

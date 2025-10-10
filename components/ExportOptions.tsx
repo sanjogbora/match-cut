@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
-import { Download, Settings, Volume2, VolumeX, Upload, Play, Pause } from 'lucide-react';
+import { Download, Settings, Volume2, VolumeX, Upload, Play, Pause, Music, Zap, Clock } from 'lucide-react';
 import { ExportSettings, VideoExportProgress } from '@/lib/types';
+import { AudioManager } from '@/lib/audioManager';
 import { cn } from '@/lib/utils';
 
 interface ExportOptionsProps {
@@ -9,6 +10,7 @@ interface ExportOptionsProps {
   onExport: () => void;
   isExporting: boolean;
   exportProgress?: VideoExportProgress;
+  audioManager?: AudioManager | null;
   disabled?: boolean;
   className?: string;
 }
@@ -19,6 +21,7 @@ export default function ExportOptions({
   onExport,
   isExporting,
   exportProgress,
+  audioManager,
   disabled = false,
   className
 }: ExportOptionsProps) {
@@ -327,8 +330,241 @@ export default function ExportOptions({
                         <span>100%</span>
                       </div>
                     </div>
+
+                    {/* Test Audio Button */}
+                    <div className="pt-2">
+                      <button
+                        onClick={() => {
+                          if (audioManager) {
+                            audioManager.playSoundEffect(
+                              settings.soundType,
+                              settings.builtinSound,
+                              settings.customAudioFile,
+                              settings.audioVolume,
+                              0.5 // Test with 0.5 second duration
+                            );
+                          }
+                        }}
+                        disabled={disabled}
+                        className="flex items-center space-x-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm"
+                      >
+                        <Play className="w-4 h-4" />
+                        <span>Test Sound</span>
+                      </button>
+                    </div>
                   </div>
                 )}
+                </div>
+              )}
+            </div>
+
+            {/* Beat Sync Section - Revolutionary Feature */}
+            <div className="space-y-4 pt-4 border-t border-orange-200">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 bg-gradient-to-r from-orange-500 to-red-500 rounded-full flex items-center justify-center">
+                  <Zap className="w-3 h-3 text-white" />
+                </div>
+                <h5 className="font-medium text-gray-900 flex items-center gap-2">
+                  <Music className="w-4 h-4 text-orange-600" />
+                  Beat Sync (Revolutionary!)
+                </h5>
+              </div>
+              
+              <div className="bg-gradient-to-r from-orange-50 to-red-50 p-3 rounded-lg border border-orange-200">
+                <p className="text-sm text-orange-800 font-medium mb-1">
+                  🎵 Sync your match cuts to music beats!
+                </p>
+                <p className="text-xs text-orange-700">
+                  Upload music → AI detects beats → Images change on every beat with perfect timing
+                </p>
+              </div>
+
+              {/* Enable Beat Sync */}
+              <div className="flex items-center justify-between">
+                <label className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    checked={settings.beatSync.enabled}
+                    onChange={(e) => handleSettingChange('beatSync', { ...settings.beatSync, enabled: e.target.checked })}
+                    disabled={disabled}
+                    className="rounded border-gray-300 text-orange-600 disabled:opacity-50"
+                  />
+                  <span className="text-sm font-medium text-gray-700">
+                    Enable Beat Synchronization
+                  </span>
+                </label>
+              </div>
+
+              {/* Beat Sync Options */}
+              {settings.beatSync.enabled && (
+                <div className="space-y-4 ml-6 pl-4 border-l-2 border-orange-200">
+                  {/* Music Upload */}
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-gray-700">
+                      Upload Music Track
+                    </label>
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="file"
+                        accept="audio/*"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            handleSettingChange('beatSync', { ...settings.beatSync, musicFile: file });
+                          }
+                        }}
+                        disabled={disabled}
+                        className="hidden"
+                        id="music-upload"
+                      />
+                      <label
+                        htmlFor="music-upload"
+                        className={cn(
+                          "flex items-center space-x-2 px-3 py-2 border border-orange-300 rounded-lg cursor-pointer",
+                          "hover:border-orange-400 transition-colors disabled:opacity-50 bg-orange-50",
+                          disabled && "cursor-not-allowed"
+                        )}
+                      >
+                        <Music className="w-4 h-4 text-orange-600" />
+                        <span className="text-sm">
+                          {settings.beatSync.musicFile ? settings.beatSync.musicFile.name : 'Choose music file'}
+                        </span>
+                      </label>
+                    </div>
+                    <p className="text-xs text-gray-500">
+                      Supports MP3, WAV, M4A files. AI will analyze beats automatically.
+                    </p>
+                  </div>
+
+                  {/* Beat Detection Mode */}
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-gray-700">
+                      Beat Detection Mode
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        onClick={() => handleSettingChange('beatSync', { ...settings.beatSync, syncMode: 'auto' })}
+                        disabled={disabled}
+                        className={cn(
+                          "px-3 py-2 border rounded-lg text-sm font-medium transition-all",
+                          "hover:border-orange-300 disabled:opacity-50",
+                          {
+                            "border-orange-500 bg-orange-50 text-orange-700": settings.beatSync.syncMode === 'auto',
+                            "border-gray-200 text-gray-700": settings.beatSync.syncMode !== 'auto',
+                          }
+                        )}
+                      >
+                        Auto Detect
+                      </button>
+                      <button
+                        onClick={() => handleSettingChange('beatSync', { ...settings.beatSync, syncMode: 'manual' })}
+                        disabled={disabled}
+                        className={cn(
+                          "px-3 py-2 border rounded-lg text-sm font-medium transition-all",
+                          "hover:border-orange-300 disabled:opacity-50",
+                          {
+                            "border-orange-500 bg-orange-50 text-orange-700": settings.beatSync.syncMode === 'manual',
+                            "border-gray-200 text-gray-700": settings.beatSync.syncMode !== 'manual',
+                          }
+                        )}
+                      >
+                        Manual BPM
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Manual BPM Input */}
+                  {settings.beatSync.syncMode === 'manual' && (
+                    <div className="space-y-2">
+                      <label className="block text-sm font-medium text-gray-700">
+                        Manual BPM
+                      </label>
+                      <input
+                        type="number"
+                        min="60"
+                        max="200"
+                        value={settings.beatSync.manualBpm || 120}
+                        onChange={(e) => handleSettingChange('beatSync', { 
+                          ...settings.beatSync, 
+                          manualBpm: parseInt(e.target.value) 
+                        })}
+                        disabled={disabled}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                        placeholder="120"
+                      />
+                    </div>
+                  )}
+
+                  {/* Beat Sensitivity */}
+                  {settings.beatSync.syncMode === 'auto' && (
+                    <div className="space-y-2">
+                      <label className="block text-sm font-medium text-gray-700">
+                        Beat Sensitivity: <span className="text-orange-600 font-semibold">{Math.round(settings.beatSync.beatSensitivity * 100)}%</span>
+                      </label>
+                      <input
+                        type="range"
+                        min="0.1"
+                        max="1"
+                        step="0.1"
+                        value={settings.beatSync.beatSensitivity}
+                        onChange={(e) => handleSettingChange('beatSync', { 
+                          ...settings.beatSync, 
+                          beatSensitivity: parseFloat(e.target.value) 
+                        })}
+                        disabled={disabled}
+                        className="w-full h-2 bg-orange-200 rounded-lg appearance-none cursor-pointer disabled:opacity-50"
+                      />
+                      <div className="flex justify-between text-xs text-gray-500">
+                        <span>Less sensitive</span>
+                        <span>More sensitive</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Beat Offset */}
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-gray-700">
+                      Beat Offset: <span className="text-orange-600 font-semibold">{settings.beatSync.beatOffset.toFixed(1)}s</span>
+                    </label>
+                    <input
+                      type="range"
+                      min="-2"
+                      max="2"
+                      step="0.1"
+                      value={settings.beatSync.beatOffset}
+                      onChange={(e) => handleSettingChange('beatSync', { 
+                        ...settings.beatSync, 
+                        beatOffset: parseFloat(e.target.value) 
+                      })}
+                      disabled={disabled}
+                      className="w-full h-2 bg-orange-200 rounded-lg appearance-none cursor-pointer disabled:opacity-50"
+                    />
+                    <div className="flex justify-between text-xs text-gray-500">
+                      <span>-2s (Earlier)</span>
+                      <span>+2s (Later)</span>
+                    </div>
+                  </div>
+
+                  {/* Format-specific explanations */}
+                  <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
+                    <div className="flex items-start gap-2">
+                      <Clock className="w-4 h-4 text-blue-600 mt-0.5" />
+                      <div className="text-sm">
+                        <p className="font-medium text-blue-800 mb-1">How Beat Sync Works:</p>
+                        {settings.format === 'mp4' ? (
+                          <p className="text-blue-700">
+                            <strong>MP4:</strong> Music plays with perfectly synced image changes on every beat. 
+                            Video duration matches the music length needed for all your images.
+                          </p>
+                        ) : (
+                          <p className="text-blue-700">
+                            <strong>GIF:</strong> Images change with the same beat timing (no audio). 
+                            Perfect for adding music in post-production with pre-synced timing!
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>

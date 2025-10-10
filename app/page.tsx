@@ -11,6 +11,7 @@ import { FaceDetector } from '@/lib/faceDetection';
 import { ImageAligner } from '@/lib/imageAlignment';
 import { VideoExporter } from '@/lib/videoExport';
 import { AudioManager } from '@/lib/audioManager';
+import { BeatDetector, BeatDetectionResult } from '@/lib/beatDetection';
 import { 
   ImageData, 
   ProcessingStatus, 
@@ -38,6 +39,12 @@ export default function Home() {
     builtinSound: 'click',
     customAudioFile: undefined,
     audioVolume: 0.7,
+    beatSync: {
+      enabled: false,
+      beatSensitivity: 0.5,
+      syncMode: 'auto',
+      beatOffset: 0,
+    },
     loop: true,
     alignmentMode: 'face-crop',
   });
@@ -56,7 +63,12 @@ export default function Home() {
   const imageAligner = useRef<ImageAligner | null>(null);
   const videoExporter = useRef<VideoExporter | null>(null);
   const audioManager = useRef<AudioManager | null>(null);
+  const beatDetector = useRef<BeatDetector | null>(null);
   const [servicesReady, setServicesReady] = useState(false);
+  
+  // Beat sync state
+  const [beatDetectionResult, setBeatDetectionResult] = useState<BeatDetectionResult | null>(null);
+  const [isAnalyzingBeats, setIsAnalyzingBeats] = useState(false);
 
   // Initialize services
   useEffect(() => {
@@ -94,6 +106,11 @@ export default function Home() {
         // Initialize audio manager
         audioManager.current = new AudioManager();
         
+        setProcessingStatus(prev => ({ ...prev, progress: 0.9 }));
+
+        // Initialize beat detector
+        beatDetector.current = new BeatDetector();
+        
         setProcessingStatus({
           isProcessing: false,
           currentStep: 'Ready',
@@ -119,23 +136,55 @@ export default function Home() {
       faceDetector.current?.cleanup();
       videoExporter.current?.cleanup();
       audioManager.current?.cleanup();
+      beatDetector.current?.cleanup();
     };
   }, []);
 
   // Load audio when settings change
   useEffect(() => {
-    if (!audioManager.current || !exportSettings.addSound) return;
+    if (!audioManager.current) return;
 
     const loadAudio = async () => {
-      if (exportSettings.soundType === 'builtin') {
-        await audioManager.current!.loadBuiltinSound(exportSettings.builtinSound);
-      } else if (exportSettings.soundType === 'custom' && exportSettings.customAudioFile) {
-        await audioManager.current!.loadCustomSound(exportSettings.customAudioFile);
+      try {
+        if (exportSettings.addSound && exportSettings.soundType === 'builtin') {
+          console.log(`Loading built-in sound: ${exportSettings.builtinSound}`);
+          await audioManager.current!.loadBuiltinSound(exportSettings.builtinSound);
+        } else if (exportSettings.addSound && exportSettings.soundType === 'custom' && exportSettings.customAudioFile) {
+          console.log(`Loading custom sound: ${exportSettings.customAudioFile.name}`);
+          await audioManager.current!.loadCustomSound(exportSettings.customAudioFile);
+        }
+      } catch (error) {
+        console.error('Failed to load audio:', error);
       }
     };
 
     loadAudio();
   }, [exportSettings.addSound, exportSettings.soundType, exportSettings.builtinSound, exportSettings.customAudioFile]);
+
+  // Analyze beats when music file changes
+  useEffect(() => {
+    if (!beatDetector.current || !exportSettings.beatSync.enabled || !exportSettings.beatSync.musicFile) {
+      setBeatDetectionResult(null);
+      return;
+    }
+
+    const analyzeBeats = async () => {
+      setIsAnalyzingBeats(true);
+      try {
+        const audioBuffer = await beatDetector.current!.loadAudioFile(exportSettings.beatSync.musicFile!);
+        const result = await beatDetector.current!.detectBeats(audioBuffer, exportSettings.beatSync.beatSensitivity);
+        setBeatDetectionResult(result);
+        console.log('Beat detection result:', result);
+      } catch (error) {
+        console.error('Beat detection failed:', error);
+        setBeatDetectionResult(null);
+      } finally {
+        setIsAnalyzingBeats(false);
+      }
+    };
+
+    analyzeBeats();
+  }, [exportSettings.beatSync.enabled, exportSettings.beatSync.musicFile, exportSettings.beatSync.beatSensitivity]);
 
   // Handle image upload
   const handleImagesUpload = useCallback(async (files: File[]) => {
@@ -630,6 +679,7 @@ export default function Home() {
               onExport={handleExport}
               isExporting={isExporting}
               exportProgress={exportProgress}
+              audioManager={audioManager.current}
               disabled={!servicesReady || previewFrames.length === 0}
             />
           </div>

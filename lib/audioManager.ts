@@ -78,7 +78,11 @@ export class AudioManager {
 
     // Stop any currently playing sound
     if (this.currentSource) {
-      this.currentSource.stop();
+      try {
+        this.currentSource.stop();
+      } catch (e) {
+        // Ignore if already stopped
+      }
     }
 
     // Create new source
@@ -96,6 +100,60 @@ export class AudioManager {
     } else {
       this.currentSource.start();
     }
+  }
+
+  // Play sound effect for specific frame duration
+  playSoundEffect(
+    soundType: 'builtin' | 'custom',
+    builtinSound: 'click' | 'shutter' | 'pop',
+    customFile?: File,
+    volume: number = 0.7,
+    maxDuration?: number
+  ): void {
+    if (!this.audioContext || !this.gainNode) return;
+
+    // Resume audio context if suspended (required by some browsers)
+    if (this.audioContext.state === 'suspended') {
+      this.audioContext.resume();
+    }
+
+    const bufferKey = soundType === 'custom' ? 'custom' : builtinSound;
+    const audioBuffer = this.audioBuffers.get(bufferKey);
+    
+    if (!audioBuffer) {
+      console.warn(`Audio buffer not found for sound effect: ${bufferKey}`);
+      return;
+    }
+
+    // Stop any currently playing sound
+    if (this.currentSource) {
+      try {
+        this.currentSource.stop();
+      } catch (e) {
+        // Ignore if already stopped
+      }
+    }
+
+    // Create new source
+    this.currentSource = this.audioContext.createBufferSource();
+    this.currentSource.buffer = audioBuffer;
+    
+    // Set volume
+    this.gainNode.gain.value = volume;
+    
+    // Connect and play
+    this.currentSource.connect(this.gainNode);
+    
+    // Start playing
+    const startTime = this.audioContext.currentTime;
+    this.currentSource.start(startTime);
+    
+    // Stop after maxDuration if specified (to match frame duration)
+    if (maxDuration && maxDuration < audioBuffer.duration) {
+      this.currentSource.stop(startTime + maxDuration);
+    }
+    
+    console.log(`Playing sound effect: ${bufferKey}, volume: ${volume}, maxDuration: ${maxDuration}`);
   }
 
   // Create synchronized audio track for video export
