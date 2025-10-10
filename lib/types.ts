@@ -28,6 +28,10 @@ export interface ExportSettings {
   resolution: '480p' | '720p' | '1080p';
   frameDuration: number;
   addSound: boolean;
+  soundType: 'builtin' | 'custom';
+  builtinSound: 'click' | 'shutter' | 'pop';
+  customAudioFile?: File;
+  audioVolume: number;
   loop: boolean;
   alignmentMode: 'full' | 'face-crop' | 'smart-frame';
 }
@@ -35,6 +39,24 @@ export interface ExportSettings {
 export interface ResolutionConfig {
   width: number;
   height: number;
+}
+
+export type ProcessingStep = 
+  | 'idle' 
+  | 'detecting_faces' 
+  | 'aligning_images' 
+  | 'generating_preview' 
+  | 'exporting_video' 
+  | 'complete' 
+  | 'error';
+
+export interface AudioSettings {
+  enabled: boolean;
+  type: 'builtin' | 'custom';
+  builtinSound: 'click' | 'shutter' | 'pop';
+  customFile?: File;
+  volume: number;
+  syncMode: 'frame-start' | 'frame-center';
 }
 
 export const RESOLUTION_CONFIGS: Record<string, ResolutionConfig> = {
@@ -85,15 +107,6 @@ export interface VideoExportProgress {
   currentFrame?: number;
 }
 
-export type ProcessingStep = 
-  | 'idle' 
-  | 'detecting_faces' 
-  | 'aligning_images' 
-  | 'generating_preview' 
-  | 'exporting_video' 
-  | 'complete' 
-  | 'error';
-
 export interface AppState {
   images: ImageData[];
   processingStatus: ProcessingStatus;
@@ -101,4 +114,5 @@ export interface AppState {
   previewFrames: AnimationFrame[];
   isPlaying: boolean;
   currentFrame: number;
+  audioSettings: AudioSettings;
 }

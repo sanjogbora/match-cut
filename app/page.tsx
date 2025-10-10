@@ -10,6 +10,7 @@ import ProcessingIndicator from '@/components/ProcessingIndicator';
 import { FaceDetector } from '@/lib/faceDetection';
 import { ImageAligner } from '@/lib/imageAlignment';
 import { VideoExporter } from '@/lib/videoExport';
+import { AudioManager } from '@/lib/audioManager';
 import { 
   ImageData, 
   ProcessingStatus, 
@@ -33,6 +34,10 @@ export default function Home() {
     resolution: '720p',
     frameDuration: 0.2,
     addSound: false,
+    soundType: 'builtin',
+    builtinSound: 'click',
+    customAudioFile: undefined,
+    audioVolume: 0.7,
     loop: true,
     alignmentMode: 'face-crop',
   });
@@ -50,6 +55,7 @@ export default function Home() {
   const faceDetector = useRef<FaceDetector | null>(null);
   const imageAligner = useRef<ImageAligner | null>(null);
   const videoExporter = useRef<VideoExporter | null>(null);
+  const audioManager = useRef<AudioManager | null>(null);
   const [servicesReady, setServicesReady] = useState(false);
 
   // Initialize services
@@ -83,6 +89,11 @@ export default function Home() {
         videoExporter.current = new VideoExporter();
         await videoExporter.current.initialize();
         
+        setProcessingStatus(prev => ({ ...prev, progress: 0.8 }));
+
+        // Initialize audio manager
+        audioManager.current = new AudioManager();
+        
         setProcessingStatus({
           isProcessing: false,
           currentStep: 'Ready',
@@ -107,8 +118,24 @@ export default function Home() {
     return () => {
       faceDetector.current?.cleanup();
       videoExporter.current?.cleanup();
+      audioManager.current?.cleanup();
     };
   }, []);
+
+  // Load audio when settings change
+  useEffect(() => {
+    if (!audioManager.current || !exportSettings.addSound) return;
+
+    const loadAudio = async () => {
+      if (exportSettings.soundType === 'builtin') {
+        await audioManager.current!.loadBuiltinSound(exportSettings.builtinSound);
+      } else if (exportSettings.soundType === 'custom' && exportSettings.customAudioFile) {
+        await audioManager.current!.loadCustomSound(exportSettings.customAudioFile);
+      }
+    };
+
+    loadAudio();
+  }, [exportSettings.addSound, exportSettings.soundType, exportSettings.builtinSound, exportSettings.customAudioFile]);
 
   // Handle image upload
   const handleImagesUpload = useCallback(async (files: File[]) => {
