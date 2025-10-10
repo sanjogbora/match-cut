@@ -186,6 +186,18 @@ export default function ExportOptions({
                     Audio Settings
                   </h5>
                 
+                {/* Mutual exclusivity warning */}
+                {settings.beatSync.enabled && (
+                  <div className="p-3 bg-orange-50 rounded-lg border border-orange-200">
+                    <p className="text-sm text-orange-800 font-medium">
+                      🎵 Beat Sync is enabled - Sound effects are disabled
+                    </p>
+                    <p className="text-xs text-orange-700 mt-1">
+                      Beat sync includes the music file. Disable beat sync to use sound effects instead.
+                    </p>
+                  </div>
+                )}
+
                 {/* Enable Audio */}
                 <div className="flex items-center justify-between">
                   <label className="flex items-center space-x-2">
@@ -193,10 +205,10 @@ export default function ExportOptions({
                       type="checkbox"
                       checked={settings.addSound}
                       onChange={(e) => handleSettingChange('addSound', e.target.checked)}
-                      disabled={disabled}
+                      disabled={disabled || settings.beatSync.enabled}
                       className="rounded border-gray-300 text-blue-600 disabled:opacity-50"
                     />
-                    <span className="text-sm font-medium text-gray-700">
+                    <span className={`text-sm font-medium ${settings.beatSync.enabled ? 'text-gray-400' : 'text-gray-700'}`}>
                       Add Sound Effects
                     </span>
                   </label>
@@ -379,13 +391,32 @@ export default function ExportOptions({
                 </p>
               </div>
 
+              {/* Mutual exclusivity warning */}
+              {settings.addSound && (
+                <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+                  <p className="text-sm text-blue-800 font-medium">
+                    🔊 Sound Effects are enabled - Beat sync will override them
+                  </p>
+                  <p className="text-xs text-blue-700 mt-1">
+                    Beat sync includes music. Sound effects will be disabled when beat sync is enabled.
+                  </p>
+                </div>
+              )}
+
               {/* Enable Beat Sync */}
               <div className="flex items-center justify-between">
                 <label className="flex items-center space-x-2">
                   <input
                     type="checkbox"
                     checked={settings.beatSync.enabled}
-                    onChange={(e) => handleSettingChange('beatSync', { ...settings.beatSync, enabled: e.target.checked })}
+                    onChange={(e) => {
+                      const newEnabled = e.target.checked;
+                      handleSettingChange('beatSync', { ...settings.beatSync, enabled: newEnabled });
+                      // Auto-disable sound effects when beat sync is enabled
+                      if (newEnabled && settings.addSound) {
+                        handleSettingChange('addSound', false);
+                      }
+                    }}
                     disabled={disabled}
                     className="rounded border-gray-300 text-orange-600 disabled:opacity-50"
                   />
@@ -634,7 +665,13 @@ export default function ExportOptions({
           </div>
           {settings.format === 'mp4' && (
             <div>
-              Audio: {settings.addSound ? 'Click sounds' : 'Silent'}
+              Audio: {
+                settings.beatSync.enabled && settings.beatSync.musicFile 
+                  ? `Music (${settings.beatSync.musicFile.name})`
+                  : settings.addSound 
+                  ? 'Sound effects' 
+                  : 'Silent'
+              }
             </div>
           )}
         </div>

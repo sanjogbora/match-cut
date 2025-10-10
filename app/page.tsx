@@ -382,14 +382,22 @@ export default function Home() {
       
       return {
         canvas,
-        duration: exportSettings.frameDuration,
+        duration: exportSettings.beatSync.enabled && beatDetectionResult 
+          ? (beatDetector.current?.generateFrameTimings(beatDetectionResult.beats, alignedImages.length, exportSettings.beatSync.beatOffset)?.[index] 
+             ? (index === 0 
+                ? beatDetector.current.generateFrameTimings(beatDetectionResult.beats, alignedImages.length, exportSettings.beatSync.beatOffset)[0]
+                : beatDetector.current.generateFrameTimings(beatDetectionResult.beats, alignedImages.length, exportSettings.beatSync.beatOffset)[index] - beatDetector.current.generateFrameTimings(beatDetectionResult.beats, alignedImages.length, exportSettings.beatSync.beatOffset)[index-1])
+             : exportSettings.frameDuration)
+          : exportSettings.beatSync.enabled && exportSettings.beatSync.syncMode === 'manual' && exportSettings.beatSync.manualBpm
+          ? 60 / exportSettings.beatSync.manualBpm
+          : exportSettings.frameDuration,
         imageId: image.id,
       };
     });
 
     console.log('Generated', frames.length, 'frames for preview');
     setPreviewFrames(frames);
-  }, [exportSettings.frameDuration]);
+  }, [exportSettings.frameDuration, exportSettings.beatSync, beatDetectionResult]);
 
   // Handle image removal
   const handleRemoveImage = useCallback((id: string) => {
@@ -442,15 +450,22 @@ export default function Home() {
         resolution
       });
       
-      await videoExporter.current.exportAndDownload(
-        previewFrames,
-        exportSettings,
-        resolution,
-        `match-cut-${Date.now()}`,
-        setExportProgress
-      );
+      try {
+        await videoExporter.current.exportAndDownload(
+          previewFrames,
+          exportSettings,
+          resolution,
+          `match-cut-${Date.now()}`,
+          setExportProgress,
+          audioManager.current
+        );
 
-      console.log('Export completed successfully');
+        console.log('Export completed successfully');
+      } catch (error) {
+        console.error('Export failed:', error);
+        const errorMessage = error instanceof Error ? error.message : 'Unknown export error';
+        alert(`Export failed: ${errorMessage}\n\nTips:\n- Try a different format (GIF vs MP4)\n- Check your internet connection\n- Try with fewer images`);
+      }
     } catch (error) {
       console.error('Export failed:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown export error';

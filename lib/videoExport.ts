@@ -108,7 +108,8 @@ export class VideoExporter {
     frames: AnimationFrame[],
     settings: ExportSettings,
     resolution: ResolutionConfig,
-    onProgress?: (progress: VideoExportProgress) => void
+    onProgress?: (progress: VideoExportProgress) => void,
+    audioManager?: any
   ): Promise<Blob> {
     if (frames.length === 0) {
       throw new Error('No frames to export');
@@ -485,15 +486,68 @@ export class VideoExporter {
         '-preset', 'medium',
       ];
 
-      if (settings.addSound) {
-        // Add click sound logic here
-        // For now, just create silent MP4
+      // Handle audio: Beat sync takes priority over sound effects
+      if (settings.beatSync.enabled && settings.beatSync.musicFile) {
+        // BEAT SYNC: Include the actual music file
+        const totalDuration = frames.reduce((sum, frame) => sum + frame.duration, 0);
+        
+        // Write the music file to FFmpeg
+        const musicFileName = 'music.' + settings.beatSync.musicFile.name.split('.').pop();
+        await this.ffmpeg.writeFile(musicFileName, await fetchFile(settings.beatSync.musicFile));
+        
+        // Add music with proper timing and offset
+        const startOffset = Math.max(0, settings.beatSync.beatOffset);
+        
+        ffmpegArgs.push(
+          '-i', musicFileName,
+          '-map', '0:v',
+          '-map', '1:a',
+          '-c:a', 'aac',
+          '-b:a', '192k',
+          '-ss', startOffset.toString(), // Start offset for music
+          '-t', totalDuration.toString(), // Limit to video duration
+          '-shortest'
+        );
+        
+        console.log(`Beat sync: Including music file with ${totalDuration}s duration, ${startOffset}s offset`);
+        
+      } else if (settings.addSound) {
+        // SOUND EFFECTS: Generate click sounds at frame transitions
+        const totalDuration = frames.reduce((sum, frame) => sum + frame.duration, 0);
+        
+        // Create audio filter that generates clicks at frame transitions
+        let audioFilter = `anullsrc=channel_layout=stereo:sample_rate=44100:duration=${totalDuration}[silence];`;
+        
+        // Add click sounds at each frame transition
+        let currentTime = 0;
+        for (let i = 0; i < frames.length; i++) {
+          if (i > 0) { // Skip first frame (no transition sound needed)
+            // Generate a click sound at the transition time
+            audioFilter += `sine=frequency=800:duration=0.1:sample_rate=44100[click${i}];`;
+            audioFilter += `[silence][click${i}]amix=inputs=2:duration=first:dropout_transition=0,adelay=${Math.round(currentTime * 1000)}|${Math.round(currentTime * 1000)}[silence];`;
+          }
+          currentTime += frames[i].duration;
+        }
+        
+        // Remove the final [silence] label for the output
+        audioFilter = audioFilter.replace(/\[silence\];$/, '');
+        
+        ffmpegArgs.push(
+          '-f', 'lavfi',
+          '-i', audioFilter,
+          '-map', '0:v',
+          '-map', '1:a',
+          '-c:a', 'aac',
+          '-b:a', '128k',
+          '-shortest'
+        );
+        
+        console.log('Sound effects: Generated audio filter:', audioFilter);
       }
 
       ffmpegArgs.push('output.mp4');
       
       await this.ffmpeg.exec(ffmpegArgs);
-
       onProgress?.({ phase: 'finalizing', progress: 0.9 });
 
       // Read the output
@@ -506,6 +560,16 @@ export class VideoExporter {
         await this.ffmpeg.deleteFile(`frame${i.toString().padStart(3, '0')}.png`);
       }
       await this.ffmpeg.deleteFile('output.mp4');
+      
+      // Cleanup music file if it was used
+      if (settings.beatSync.enabled && settings.beatSync.musicFile) {
+        const musicFileName = 'music.' + settings.beatSync.musicFile.name.split('.').pop();
+        try {
+          await this.ffmpeg.deleteFile(musicFileName);
+        } catch (e) {
+          // File might not exist, ignore cleanup error
+        }
+      }
 
       onProgress?.({ phase: 'complete', progress: 1 });
 
@@ -534,10 +598,11 @@ export class VideoExporter {
     settings: ExportSettings,
     resolution: ResolutionConfig,
     filename: string,
-    onProgress?: (progress: VideoExportProgress) => void
+    onProgress?: (progress: VideoExportProgress) => void,
+    audioManager?: any
   ): Promise<void> {
     try {
-      const blob = await this.exportAnimation(frames, settings, resolution, onProgress);
+      const blob = await this.exportAnimation(frames, settings, resolution, onProgress, audioManager);
       const extension = settings.format === 'gif' ? 'gif' : 'mp4';
       const fullFilename = filename.includes('.') ? filename : `${filename}.${extension}`;
       

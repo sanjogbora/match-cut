@@ -67,7 +67,10 @@ export default function AnimationPreview({
           return;
         }
 
-        if (timestamp - lastTime >= frameDuration * 1000) {
+        const currentFrameData = frames[currentFrame];
+        const currentFrameDuration = currentFrameData?.duration || frameDuration;
+        
+        if (timestamp - lastTime >= currentFrameDuration * 1000) {
           setCurrentFrame(prev => {
             const nextFrame = (prev + 1) % frames.length;
             onFrameChange?.(nextFrame);
@@ -79,7 +82,7 @@ export default function AnimationPreview({
                 audioSettings.builtinSound,
                 audioSettings.customAudioFile,
                 audioSettings.audioVolume,
-                frameDuration // Limit sound to frame duration
+                currentFrameDuration // Use actual frame duration
               );
             }
             
