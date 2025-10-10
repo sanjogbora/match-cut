@@ -43,7 +43,7 @@
 
 ### 💡 Performance Tips
 
-1. **Image Count:** Start with 5-10 images for best performance
+1. **Image Count:** Start with 5-10 images for best performance (up to 200 images supported)
 2. **Image Size:** Resize very large images (>2MB) before uploading  
 3. **Browser:** Use Chrome or Edge for best performance
 4. **Memory:** Close other browser tabs if experiencing slowness

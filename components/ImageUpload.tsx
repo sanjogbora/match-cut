@@ -11,7 +11,7 @@ interface ImageUploadProps {
 
 export default function ImageUpload({ 
   onImagesUpload, 
-  maxFiles = 50, 
+  maxFiles = 200, 
   disabled = false,
   className 
 }: ImageUploadProps) {
