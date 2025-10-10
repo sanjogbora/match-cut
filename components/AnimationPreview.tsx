@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Play, Pause, RotateCcw, Settings } from 'lucide-react';
-import { AnimationFrame } from '@/lib/types';
+import { AnimationFrame, ExportSettings } from '@/lib/types';
+import { AudioManager } from '@/lib/audioManager';
 import { cn } from '@/lib/utils';
 
 interface AnimationPreviewProps {
@@ -9,6 +10,8 @@ interface AnimationPreviewProps {
   isPlaying: boolean;
   onPlayPause: () => void;
   onFrameChange?: (frameIndex: number) => void;
+  audioSettings?: ExportSettings;
+  audioManager?: AudioManager | null;
   className?: string;
   disabled?: boolean;
 }
@@ -19,6 +22,8 @@ export default function AnimationPreview({
   isPlaying,
   onPlayPause,
   onFrameChange,
+  audioSettings,
+  audioManager,
   className,
   disabled = false
 }: AnimationPreviewProps) {
@@ -66,6 +71,20 @@ export default function AnimationPreview({
           setCurrentFrame(prev => {
             const nextFrame = (prev + 1) % frames.length;
             onFrameChange?.(nextFrame);
+            
+            // Play audio on frame change
+            if (audioManager && audioSettings?.addSound && audioSettings.format === 'mp4') {
+              const audioConfig = {
+                enabled: audioSettings.addSound,
+                type: audioSettings.soundType,
+                builtinSound: audioSettings.builtinSound,
+                customFile: audioSettings.customAudioFile,
+                volume: audioSettings.audioVolume,
+                syncMode: 'frame-start' as const
+              };
+              audioManager.playSound(audioConfig);
+            }
+            
             return nextFrame;
           });
           lastTime = timestamp;

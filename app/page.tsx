@@ -617,6 +617,8 @@ export default function Home() {
                 isPlaying={isPlaying}
                 onPlayPause={() => setIsPlaying(!isPlaying)}
                 onFrameChange={setCurrentFrame}
+                audioSettings={exportSettings}
+                audioManager={audioManager.current}
                 disabled={processingStatus.isProcessing}
               />
             </div>

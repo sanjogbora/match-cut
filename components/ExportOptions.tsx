@@ -162,13 +162,26 @@ export default function ExportOptions({
               </label>
             </div>
 
-            {/* Audio Settings (MP4 only) */}
-            {settings.format === 'mp4' && (
-              <div className="space-y-4">
-                <h5 className="font-medium text-gray-900 flex items-center gap-2">
-                  <Volume2 className="w-4 h-4" />
-                  Audio Settings
-                </h5>
+            {/* Audio Settings */}
+            <div className="space-y-4">
+              {settings.format === 'gif' && (
+                <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                  <div className="flex items-center gap-2 text-gray-500">
+                    <VolumeX className="w-4 h-4" />
+                    <span className="text-sm font-medium">Audio Settings</span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Audio is only available for MP4 format. Switch to MP4 to add sound effects.
+                  </p>
+                </div>
+              )}
+              
+              {settings.format === 'mp4' && (
+                <div className="space-y-4">
+                  <h5 className="font-medium text-gray-900 flex items-center gap-2">
+                    <Volume2 className="w-4 h-4" />
+                    Audio Settings
+                  </h5>
                 
                 {/* Enable Audio */}
                 <div className="flex items-center justify-between">
@@ -316,8 +329,9 @@ export default function ExportOptions({
                     </div>
                   </div>
                 )}
-              </div>
-            )}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
