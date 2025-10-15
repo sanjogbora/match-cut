@@ -315,7 +315,8 @@ export class VideoExporter {
 
       // Read the output
       const data = await this.ffmpeg.readFile('output.gif');
-      const uint8Array = new Uint8Array(data as unknown as ArrayBuffer);
+      // FFmpeg readFile returns Uint8Array for binary files
+      const uint8Array = data as Uint8Array;
       const blob = new Blob([uint8Array], { type: 'image/gif' });
 
       // Cleanup
@@ -862,7 +863,8 @@ export class VideoExporter {
 
       // Read the output
       const fileData = await this.ffmpeg.readFile('output.mp4');
-      const data = new Uint8Array(fileData as ArrayBuffer);
+      // FFmpeg readFile returns Uint8Array for binary files
+      const data = fileData as Uint8Array;
       const blob = new Blob([data], { type: 'video/mp4' });
 
       // Cleanup
