@@ -60,6 +60,7 @@ export default function AnimationPreview({
   useEffect(() => {
     if (isPlaying && frames.length > 0) {
       let lastTime = performance.now();
+      let frameIndexRef = currentFrame; // Track current frame in closure
       
       const animateFrame = (timestamp: number) => {
         if (!isPlaying || frames.length === 0) {
@@ -67,27 +68,28 @@ export default function AnimationPreview({
           return;
         }
 
-        const currentFrameData = frames[currentFrame];
+        // Use the ref value instead of stale state
+        const currentFrameData = frames[frameIndexRef];
         const currentFrameDuration = currentFrameData?.duration || frameDuration;
         
         if (timestamp - lastTime >= currentFrameDuration * 1000) {
-          setCurrentFrame(prev => {
-            const nextFrame = (prev + 1) % frames.length;
-            onFrameChange?.(nextFrame);
-            
-            // Play sound effect on frame change
-            if (audioManager && audioSettings?.addSound && audioSettings.format === 'mp4') {
-              audioManager.playSoundEffect(
-                audioSettings.soundType,
-                audioSettings.builtinSound,
-                audioSettings.customAudioFile,
-                audioSettings.audioVolume,
-                currentFrameDuration // Use actual frame duration
-              );
-            }
-            
-            return nextFrame;
-          });
+          // Update to next frame
+          frameIndexRef = (frameIndexRef + 1) % frames.length;
+          
+          setCurrentFrame(frameIndexRef);
+          onFrameChange?.(frameIndexRef);
+          
+          // Play sound effect on frame change
+          if (audioManager && audioSettings?.addSound && audioSettings.format === 'mp4') {
+            audioManager.playSoundEffect(
+              audioSettings.soundType,
+              audioSettings.builtinSound,
+              audioSettings.customAudioFile,
+              audioSettings.audioVolume,
+              currentFrameDuration // Use actual frame duration
+            );
+          }
+          
           lastTime = timestamp;
         }
 
@@ -108,7 +110,7 @@ export default function AnimationPreview({
         animationRef.current = undefined;
       }
     };
-  }, [isPlaying, frames.length, frameDuration, onFrameChange]);
+  }, [isPlaying, frames, frameDuration, onFrameChange, audioManager, audioSettings]);
 
   // Draw current frame
   useEffect(() => {

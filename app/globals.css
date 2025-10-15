@@ -107,6 +107,40 @@ input[type="range"]::-moz-range-thumb {
   @apply h-4 w-4 bg-blue-600 rounded-full cursor-pointer border-none;
 }
 
+/* Orange slider variant */
+input[type="range"].slider-orange::-webkit-slider-track {
+  @apply bg-orange-200;
+}
+
+input[type="range"].slider-orange::-webkit-slider-thumb {
+  @apply bg-orange-600;
+}
+
+input[type="range"].slider-orange::-moz-range-track {
+  @apply bg-orange-200;
+}
+
+input[type="range"].slider-orange::-moz-range-thumb {
+  @apply bg-orange-600;
+}
+
+/* Orange slider with smaller knob and grey track */
+input[type="range"].slider-orange-small::-webkit-slider-track {
+  @apply bg-transparent;
+}
+
+input[type="range"].slider-orange-small::-webkit-slider-thumb {
+  @apply appearance-none h-3 w-3 bg-orange-600 rounded-full cursor-pointer;
+}
+
+input[type="range"].slider-orange-small::-moz-range-track {
+  @apply bg-transparent border-none;
+}
+
+input[type="range"].slider-orange-small::-moz-range-thumb {
+  @apply h-3 w-3 bg-orange-600 rounded-full cursor-pointer border-none;
+}
+
 /* Animation delays for staggered effects */
 .animate-delay-100 {
   animation-delay: 100ms;

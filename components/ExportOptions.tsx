@@ -47,7 +47,7 @@ export default function ExportOptions({
             className="p-2 text-gray-500 hover:text-gray-700 rounded-full hover:bg-gray-100"
             title="Advanced Settings"
           >
-            <Settings className="w-5 h-5" />
+            <Music className="w-5 h-5" />
           </button>
         </div>
       </div>
@@ -144,27 +144,27 @@ export default function ExportOptions({
           </div>
         </div>
 
+        {/* Loop Option */}
+        <div className="flex items-center justify-between">
+          <label className="flex items-center space-x-2">
+            <input
+              type="checkbox"
+              checked={settings.loop}
+              onChange={(e) => handleSettingChange('loop', e.target.checked)}
+              disabled={disabled}
+              className="rounded border-gray-300 text-blue-600 disabled:opacity-50"
+            />
+            <span className="text-sm font-medium text-gray-700">
+              Loop Animation
+            </span>
+          </label>
+        </div>
+
         {/* Advanced Options */}
         {showAdvanced && (
           <div className="space-y-4 pt-4 border-t">
             <h4 className="font-medium text-gray-900">Advanced Options</h4>
             
-            {/* Loop Option */}
-            <div className="flex items-center justify-between">
-              <label className="flex items-center space-x-2">
-                <input
-                  type="checkbox"
-                  checked={settings.loop}
-                  onChange={(e) => handleSettingChange('loop', e.target.checked)}
-                  disabled={disabled}
-                  className="rounded border-gray-300 text-blue-600 disabled:opacity-50"
-                />
-                <span className="text-sm font-medium text-gray-700">
-                  Loop Animation
-                </span>
-              </label>
-            </div>
-
             {/* Audio Settings */}
             <div className="space-y-4">
               {settings.format === 'gif' && (
@@ -260,24 +260,24 @@ export default function ExportOptions({
                         <label className="block text-sm font-medium text-gray-700">
                           Built-in Sound
                         </label>
-                        <div className="grid grid-cols-3 gap-2">
-                          {(['click', 'shutter', 'pop'] as const).map((sound) => (
-                            <button
-                              key={sound}
-                              onClick={() => handleSettingChange('builtinSound', sound)}
+                        <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="radio"
+                              id="click-sound"
+                              name="builtin-sound"
+                              checked={settings.builtinSound === 'click'}
+                              onChange={() => handleSettingChange('builtinSound', 'click')}
                               disabled={disabled}
-                              className={cn(
-                                "px-2 py-1 border rounded text-xs font-medium transition-all",
-                                "hover:border-blue-300 disabled:opacity-50",
-                                {
-                                  "border-blue-500 bg-blue-50 text-blue-700": settings.builtinSound === sound,
-                                  "border-gray-200 text-gray-700": settings.builtinSound !== sound,
-                                }
-                              )}
-                            >
-                              {sound.charAt(0).toUpperCase() + sound.slice(1)}
-                            </button>
-                          ))}
+                              className="text-blue-600"
+                            />
+                            <label htmlFor="click-sound" className="text-sm font-medium text-blue-800">
+                              Mouse Click Sound
+                            </label>
+                          </div>
+                          <p className="text-xs text-blue-700 mt-1 ml-6">
+                            Generated click sound - no file needed, works offline
+                          </p>
                         </div>
                       </div>
                     )}
@@ -316,48 +316,39 @@ export default function ExportOptions({
                             </span>
                           </label>
                         </div>
-                        <p className="text-xs text-gray-500">
-                          Supports MP3, WAV, OGG files
-                        </p>
+                        <div className="p-3 bg-green-50 rounded-lg border border-green-200">
+                          <p className="text-xs text-green-800 font-medium">
+                            🎵 How it works:
+                          </p>
+                          <p className="text-xs text-green-700 mt-1">
+                            • Your audio is trimmed to the frame duration ({settings.frameDuration}s)<br/>
+                            • Trimmed audio plays at each image transition<br/>
+                            • Works like the built-in click sound!<br/>
+                            • Supports MP3, WAV, OGG files
+                          </p>
+                        </div>
                       </div>
                     )}
-
-                    {/* Volume Control */}
-                    <div className="space-y-2">
-                      <label className="block text-sm font-medium text-gray-700">
-                        Volume: <span className="text-blue-600 font-semibold">{Math.round(settings.audioVolume * 100)}%</span>
-                      </label>
-                      <input
-                        type="range"
-                        min="0"
-                        max="1"
-                        step="0.1"
-                        value={settings.audioVolume}
-                        onChange={(e) => handleSettingChange('audioVolume', parseFloat(e.target.value))}
-                        disabled={disabled}
-                        className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer disabled:opacity-50"
-                      />
-                      <div className="flex justify-between text-xs text-gray-500">
-                        <span>0%</span>
-                        <span>100%</span>
-                      </div>
-                    </div>
 
                     {/* Test Audio Button */}
                     <div className="pt-2">
                       <button
-                        onClick={() => {
+                        onClick={async () => {
                           if (audioManager) {
+                            // Load custom audio if needed
+                            if (settings.soundType === 'custom' && settings.customAudioFile) {
+                              await audioManager.loadCustomSound(settings.customAudioFile);
+                            }
                             audioManager.playSoundEffect(
                               settings.soundType,
                               settings.builtinSound,
                               settings.customAudioFile,
-                              settings.audioVolume,
-                              0.5 // Test with 0.5 second duration
+                              0.7, // Fixed volume
+                              settings.frameDuration // Use actual frame duration
                             );
                           }
                         }}
-                        disabled={disabled}
+                        disabled={disabled || (settings.soundType === 'custom' && !settings.customAudioFile)}
                         className="flex items-center space-x-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm"
                       >
                         <Play className="w-4 h-4" />
@@ -378,18 +369,10 @@ export default function ExportOptions({
                 </div>
                 <h5 className="font-medium text-gray-900 flex items-center gap-2">
                   <Music className="w-4 h-4 text-orange-600" />
-                  Beat Sync (Revolutionary!)
+                  Beat Sync
                 </h5>
               </div>
               
-              <div className="bg-gradient-to-r from-orange-50 to-red-50 p-3 rounded-lg border border-orange-200">
-                <p className="text-sm text-orange-800 font-medium mb-1">
-                  🎵 Sync your match cuts to music beats!
-                </p>
-                <p className="text-xs text-orange-700">
-                  Upload music → AI detects beats → Images change on every beat with perfect timing
-                </p>
-              </div>
 
               {/* Mutual exclusivity warning */}
               {settings.addSound && (
@@ -462,76 +445,15 @@ export default function ExportOptions({
                         </span>
                       </label>
                     </div>
-                    <p className="text-xs text-gray-500">
-                      Supports MP3, WAV, M4A files. AI will analyze beats automatically.
-                    </p>
                   </div>
 
-                  {/* Beat Detection Mode */}
+                  {/* Detection Sensitivity */}
                   <div className="space-y-2">
                     <label className="block text-sm font-medium text-gray-700">
-                      Beat Detection Mode
+                      Detection Sensitivity: <span className="text-orange-600 font-semibold">{Math.round(settings.beatSync.beatSensitivity * 100)}%</span>
                     </label>
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        onClick={() => handleSettingChange('beatSync', { ...settings.beatSync, syncMode: 'auto' })}
-                        disabled={disabled}
-                        className={cn(
-                          "px-3 py-2 border rounded-lg text-sm font-medium transition-all",
-                          "hover:border-orange-300 disabled:opacity-50",
-                          {
-                            "border-orange-500 bg-orange-50 text-orange-700": settings.beatSync.syncMode === 'auto',
-                            "border-gray-200 text-gray-700": settings.beatSync.syncMode !== 'auto',
-                          }
-                        )}
-                      >
-                        Auto Detect
-                      </button>
-                      <button
-                        onClick={() => handleSettingChange('beatSync', { ...settings.beatSync, syncMode: 'manual' })}
-                        disabled={disabled}
-                        className={cn(
-                          "px-3 py-2 border rounded-lg text-sm font-medium transition-all",
-                          "hover:border-orange-300 disabled:opacity-50",
-                          {
-                            "border-orange-500 bg-orange-50 text-orange-700": settings.beatSync.syncMode === 'manual',
-                            "border-gray-200 text-gray-700": settings.beatSync.syncMode !== 'manual',
-                          }
-                        )}
-                      >
-                        Manual BPM
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Manual BPM Input */}
-                  {settings.beatSync.syncMode === 'manual' && (
-                    <div className="space-y-2">
-                      <label className="block text-sm font-medium text-gray-700">
-                        Manual BPM
-                      </label>
-                      <input
-                        type="number"
-                        min="60"
-                        max="200"
-                        value={settings.beatSync.manualBpm || 120}
-                        onChange={(e) => handleSettingChange('beatSync', { 
-                          ...settings.beatSync, 
-                          manualBpm: parseInt(e.target.value) 
-                        })}
-                        disabled={disabled}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-                        placeholder="120"
-                      />
-                    </div>
-                  )}
-
-                  {/* Beat Sensitivity */}
-                  {settings.beatSync.syncMode === 'auto' && (
-                    <div className="space-y-2">
-                      <label className="block text-sm font-medium text-gray-700">
-                        Beat Sensitivity: <span className="text-orange-600 font-semibold">{Math.round(settings.beatSync.beatSensitivity * 100)}%</span>
-                      </label>
+                    <div className="relative py-2">
+                      <div className="absolute w-full h-0.5 bg-gray-300 top-1/2 -translate-y-1/2 rounded-full" />
                       <input
                         type="range"
                         min="0.1"
@@ -543,56 +465,51 @@ export default function ExportOptions({
                           beatSensitivity: parseFloat(e.target.value) 
                         })}
                         disabled={disabled}
-                        className="w-full h-2 bg-orange-200 rounded-lg appearance-none cursor-pointer disabled:opacity-50"
+                        className="relative w-full h-2 bg-transparent rounded-lg appearance-none cursor-pointer disabled:opacity-50 slider-orange-small"
                       />
-                      <div className="flex justify-between text-xs text-gray-500">
-                        <span>Less sensitive</span>
-                        <span>More sensitive</span>
-                      </div>
                     </div>
-                  )}
+                    <div className="flex justify-between text-xs text-gray-500">
+                      <span>Fewer beats</span>
+                      <span>More beats</span>
+                    </div>
+                  </div>
 
-                  {/* Beat Offset */}
+                  {/* Start Offset */}
                   <div className="space-y-2">
                     <label className="block text-sm font-medium text-gray-700">
-                      Beat Offset: <span className="text-orange-600 font-semibold">{settings.beatSync.beatOffset.toFixed(1)}s</span>
+                      Start Offset: <span className="text-orange-600 font-semibold">{settings.beatSync.beatOffset.toFixed(1)}s</span>
                     </label>
-                    <input
-                      type="range"
-                      min="-2"
-                      max="2"
-                      step="0.1"
-                      value={settings.beatSync.beatOffset}
-                      onChange={(e) => handleSettingChange('beatSync', { 
-                        ...settings.beatSync, 
-                        beatOffset: parseFloat(e.target.value) 
-                      })}
-                      disabled={disabled}
-                      className="w-full h-2 bg-orange-200 rounded-lg appearance-none cursor-pointer disabled:opacity-50"
-                    />
+                    <div className="relative py-2">
+                      <div className="absolute w-full h-0.5 bg-gray-300 top-1/2 -translate-y-1/2 rounded-full" />
+                      <input
+                        type="range"
+                        min="-2"
+                        max="2"
+                        step="0.1"
+                        value={settings.beatSync.beatOffset}
+                        onChange={(e) => handleSettingChange('beatSync', { 
+                          ...settings.beatSync, 
+                          beatOffset: parseFloat(e.target.value) 
+                        })}
+                        disabled={disabled}
+                        className="relative w-full h-2 bg-transparent rounded-lg appearance-none cursor-pointer disabled:opacity-50 slider-orange-small"
+                      />
+                    </div>
                     <div className="flex justify-between text-xs text-gray-500">
-                      <span>-2s (Earlier)</span>
-                      <span>+2s (Later)</span>
+                      <span>Images start earlier</span>
+                      <span>Images start later</span>
                     </div>
                   </div>
 
                   {/* Format-specific explanations */}
                   <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
                     <div className="flex items-start gap-2">
-                      <Clock className="w-4 h-4 text-blue-600 mt-0.5" />
+                      <Zap className="w-4 h-4 text-blue-600 mt-0.5" />
                       <div className="text-sm">
-                        <p className="font-medium text-blue-800 mb-1">How Beat Sync Works:</p>
-                        {settings.format === 'mp4' ? (
-                          <p className="text-blue-700">
-                            <strong>MP4:</strong> Music plays with perfectly synced image changes on every beat. 
-                            Video duration matches the music length needed for all your images.
-                          </p>
-                        ) : (
-                          <p className="text-blue-700">
-                            <strong>GIF:</strong> Images change with the same beat timing (no audio). 
-                            Perfect for adding music in post-production with pre-synced timing!
-                          </p>
-                        )}
+                        <p className="font-medium text-blue-800 mb-1">✨ AI Beat Detection:</p>
+                        <p className="text-blue-700">
+                          AI detects beats in your music and syncs image changes to the rhythm. The video ends with the music, skipping unused images.
+                        </p>
                       </div>
                     </div>
                   </div>
@@ -624,7 +541,13 @@ export default function ExportOptions({
               />
             </div>
             
-            {exportProgress.frameCount && exportProgress.currentFrame && (
+            {exportProgress.message && (
+              <div className="text-xs text-blue-700 text-center">
+                {exportProgress.message}
+              </div>
+            )}
+            
+            {!exportProgress.message && exportProgress.frameCount && exportProgress.currentFrame && (
               <div className="text-xs text-blue-700 text-center">
                 Frame {exportProgress.currentFrame} of {exportProgress.frameCount}
               </div>

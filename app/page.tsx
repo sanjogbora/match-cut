@@ -42,7 +42,6 @@ export default function Home() {
     beatSync: {
       enabled: false,
       beatSensitivity: 0.5,
-      syncMode: 'auto',
       beatOffset: 0,
     },
     loop: true,
@@ -360,7 +359,42 @@ export default function Home() {
 
     console.log('Generating preview frames for', alignedImages.length, 'images');
     
-    const frames: AnimationFrame[] = alignedImages.map((image, index) => {
+    // Calculate frame durations ONCE before mapping
+    let frameDurations: number[];
+    let imagesToUse = alignedImages;
+    
+    if (exportSettings.beatSync.enabled && beatDetectionResult && beatDetector.current) {
+      // BEAT SYNC MODE: Use detected beats to calculate durations
+      frameDurations = beatDetector.current.generateFrameDurations(
+        beatDetectionResult.beats,
+        alignedImages.length,
+        exportSettings.beatSync.beatOffset
+      );
+      
+      // TRUNCATE images to match beat count
+      if (frameDurations.length < alignedImages.length) {
+        imagesToUse = alignedImages.slice(0, frameDurations.length);
+        console.warn(`⚠️ Truncated ${alignedImages.length} images to ${frameDurations.length} (matching detected beats)`);
+      }
+      
+      console.log('🎵 Beat Sync Enabled:', {
+        detectedBeats: beatDetectionResult.beats.length,
+        bpm: beatDetectionResult.bpm,
+        totalImages: alignedImages.length,
+        usedImages: imagesToUse.length,
+        offset: exportSettings.beatSync.beatOffset,
+        frameDurations: frameDurations
+      });
+    } else {
+      // NORMAL MODE: Use fixed frame duration
+      frameDurations = Array(alignedImages.length).fill(exportSettings.frameDuration);
+      console.log('⏱️ Normal Mode:', {
+        frameDuration: exportSettings.frameDuration,
+        imageCount: alignedImages.length
+      });
+    }
+    
+    const frames: AnimationFrame[] = imagesToUse.map((image, index) => {
       const canvas = image.alignedCanvas!;
       
       // Debug: Check if each canvas has content
@@ -373,6 +407,7 @@ export default function Home() {
       console.log(`Frame ${index + 1}:`, {
         canvasSize: { width: canvas.width, height: canvas.height },
         hasContent,
+        duration: frameDurations[index] || exportSettings.frameDuration,
         imageId: image.id
       });
       
@@ -382,15 +417,7 @@ export default function Home() {
       
       return {
         canvas,
-        duration: exportSettings.beatSync.enabled && beatDetectionResult 
-          ? (beatDetector.current?.generateFrameTimings(beatDetectionResult.beats, alignedImages.length, exportSettings.beatSync.beatOffset)?.[index] 
-             ? (index === 0 
-                ? beatDetector.current.generateFrameTimings(beatDetectionResult.beats, alignedImages.length, exportSettings.beatSync.beatOffset)[0]
-                : beatDetector.current.generateFrameTimings(beatDetectionResult.beats, alignedImages.length, exportSettings.beatSync.beatOffset)[index] - beatDetector.current.generateFrameTimings(beatDetectionResult.beats, alignedImages.length, exportSettings.beatSync.beatOffset)[index-1])
-             : exportSettings.frameDuration)
-          : exportSettings.beatSync.enabled && exportSettings.beatSync.syncMode === 'manual' && exportSettings.beatSync.manualBpm
-          ? 60 / exportSettings.beatSync.manualBpm
-          : exportSettings.frameDuration,
+        duration: frameDurations[index] || exportSettings.frameDuration, // Fallback to default
         imageId: image.id,
       };
     });
@@ -457,7 +484,7 @@ export default function Home() {
           resolution,
           `match-cut-${Date.now()}`,
           setExportProgress,
-          audioManager.current
+          audioManager.current || undefined
         );
 
         console.log('Export completed successfully');

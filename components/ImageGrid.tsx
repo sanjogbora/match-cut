@@ -244,15 +244,15 @@ export default function ImageGrid({
               </div>
             )}
 
-            {/* Failed Indicator with Error Message */}
+            {/* Failed Indicator with Error Message - Bottom Banner */}
             {getImageStatus(image) === 'failed' && image.error && (
               <div 
-                className="absolute inset-0 bg-red-50 bg-opacity-95 flex items-center justify-center rounded-lg p-2"
+                className="absolute bottom-0 left-0 right-0 bg-red-500 bg-opacity-90 rounded-b-lg p-2"
                 title={image.error}
               >
-                <div className="text-center">
-                  <div className="text-red-600 text-lg mb-1">⚠</div>
-                  <div className="text-xs text-red-700 leading-tight">
+                <div className="flex items-center justify-center gap-1">
+                  <div className="text-white text-sm">⚠</div>
+                  <div className="text-xs text-white font-medium leading-tight">
                     {image.error.split('.')[0]}...
                   </div>
                 </div>
@@ -261,8 +261,6 @@ export default function ImageGrid({
           </div>
         ))}
       </div>
-
-      {/* Image Preview Modal */}
       {selectedImage && (
         <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg max-w-2xl max-h-full overflow-auto">

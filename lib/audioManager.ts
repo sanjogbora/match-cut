@@ -198,13 +198,19 @@ export class AudioManager {
       // Calculate sample position
       const samplePosition = Math.floor(soundTime * sampleRate);
       
-      // Copy source audio to output buffer at calculated position
+      // Calculate how many samples to copy (trimmed to frame duration)
+      const maxSamplesToCopy = Math.min(
+        sourceBuffer.length,
+        Math.floor(frameDuration * sampleRate)
+      );
+      
+      // Copy source audio to output buffer at calculated position (trimmed to frame duration)
       for (let channel = 0; channel < sourceBuffer.numberOfChannels; channel++) {
         const sourceData = sourceBuffer.getChannelData(channel);
         const outputData = outputBuffer.getChannelData(channel);
         
-        // Apply volume and copy samples
-        for (let i = 0; i < sourceData.length && (samplePosition + i) < totalSamples; i++) {
+        // Apply volume and copy samples (only up to frame duration)
+        for (let i = 0; i < maxSamplesToCopy && (samplePosition + i) < totalSamples; i++) {
           outputData[samplePosition + i] += sourceData[i] * audioSettings.volume;
         }
       }

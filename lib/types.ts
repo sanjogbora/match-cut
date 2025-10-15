@@ -26,10 +26,8 @@ export interface ProcessingStatus {
 export interface BeatSyncSettings {
   enabled: boolean;
   musicFile?: File;
-  beatSensitivity: number;
-  syncMode: 'auto' | 'manual';
-  manualBpm?: number;
-  beatOffset: number;
+  beatSensitivity: number; // 0.1 - 1.0: Controls onset detection threshold
+  beatOffset: number; // -2.0 to +2.0: Start time adjustment in seconds
 }
 
 export interface ExportSettings {
@@ -38,7 +36,7 @@ export interface ExportSettings {
   frameDuration: number;
   addSound: boolean;
   soundType: 'builtin' | 'custom';
-  builtinSound: 'click' | 'shutter' | 'pop';
+  builtinSound: 'click';
   customAudioFile?: File;
   audioVolume: number;
   beatSync: BeatSyncSettings;
@@ -115,6 +113,7 @@ export interface VideoExportProgress {
   progress: number;
   frameCount?: number;
   currentFrame?: number;
+  message?: string;
 }
 
 export interface AppState {
