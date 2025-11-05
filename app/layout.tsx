@@ -1,8 +1,8 @@
 import './globals.css'
-import { Inter } from 'next/font/google'
+import { Plus_Jakarta_Sans } from 'next/font/google'
 import { Analytics } from "@vercel/analytics/next"
 
-const inter = Inter({ subsets: ['latin'] })
+const plusJakarta = Plus_Jakarta_Sans({ subsets: ['latin'] })
 
 export const metadata = {
   title: 'Match Cut Generator',
@@ -22,7 +22,7 @@ export default function RootLayout({
       <head>
         <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
       </head>
-      <body className={inter.className}>
+      <body className={plusJakarta.className}>
         <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
           {children}
         </div>

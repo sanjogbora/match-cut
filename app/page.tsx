@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { Eye, Zap, Download, Instagram } from 'lucide-react';
+import { Smile, Zap, Download, Instagram } from 'lucide-react';
+import Link from 'next/link';
 import ImageUpload from '@/components/ImageUpload';
 import ImageGrid from '@/components/ImageGrid';
 import AnimationPreview from '@/components/AnimationPreview';
@@ -171,7 +172,19 @@ export default function Home() {
       setIsAnalyzingBeats(true);
       try {
         const audioBuffer = await beatDetector.current!.loadAudioFile(exportSettings.beatSync.musicFile!);
-        const result = await beatDetector.current!.detectBeats(audioBuffer, exportSettings.beatSync.beatSensitivity);
+        
+        // SMART DETECTION: Let algorithm detect natural beats, don't force image count
+        const alignedImages = images.filter(img => img.status === 'aligned');
+        
+        console.log(`🎯 Smart beat detection: ${alignedImages.length} images available`);
+        console.log(`   Algorithm will detect natural beats, then use min(images, beats)`);
+        
+        // Don't pass targetBeatCount - let it detect naturally
+        const result = await beatDetector.current!.detectBeats(
+          audioBuffer, 
+          exportSettings.beatSync.beatSensitivity,
+          undefined  // Let algorithm find all natural beats
+        );
         setBeatDetectionResult(result);
         console.log('Beat detection result:', result);
       } catch (error) {
@@ -183,7 +196,7 @@ export default function Home() {
     };
 
     analyzeBeats();
-  }, [exportSettings.beatSync.enabled, exportSettings.beatSync.musicFile, exportSettings.beatSync.beatSensitivity]);
+  }, [exportSettings.beatSync.enabled, exportSettings.beatSync.musicFile, exportSettings.beatSync.beatSensitivity, images]);
 
   // Handle image upload
   const handleImagesUpload = useCallback(async (files: File[]) => {
@@ -560,8 +573,8 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center space-x-3">
-              <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-                <Eye className="w-5 h-5 text-white" />
+              <div className="w-8 h-8 bg-yellow-400 rounded-lg flex items-center justify-center">
+                <Smile className="w-5 h-5 text-gray-900" />
               </div>
               <h1 className="text-xl font-bold text-gray-900">
                 Match Cut Generator
@@ -569,6 +582,14 @@ export default function Home() {
             </div>
             
             <div className="flex items-center space-x-4">
+              <Link
+                href="/about"
+                className="text-gray-600 hover:text-gray-900 px-3 py-2 rounded-md hover:bg-gray-100"
+                target={processingStatus.isProcessing ? '_blank' : undefined}
+                rel={processingStatus.isProcessing ? 'noopener noreferrer' : undefined}
+              >
+                About
+              </Link>
               <a 
                 href="https://www.producthunt.com/products/face-match-cut-generator?embed=true&utm_source=badge-featured&utm_medium=badge&utm_source=badge-face&#0045;match&#0045;cut&#0045;generator" 
                 target="_blank"
@@ -600,9 +621,6 @@ export default function Home() {
         {/* Hero Section */}
         {images.length === 0 && !processingStatus.isProcessing && (
           <div className="text-center mb-12">
-            <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-100 rounded-full mb-6">
-              <Zap className="w-8 h-8 text-blue-600" />
-            </div>
             <h2 className="text-3xl font-bold text-gray-900 mb-4">
               Create Eye-Aligned Match Cut Videos
             </h2>
